@@ -78,6 +78,15 @@
 /* Sidebar — white bg, thin right border */
 .VPSidebar { background: #ffffff !important; border-right: 1px solid #f1f5f9 !important; }
 
+/* Search — brand accent on hover/focus */
+.DocSearch-Button:hover { border-color: var(--kraube-accent) !important; box-shadow: 0 0 0 1px var(--kraube-accent) !important; }
+.VPNavBarSearchButton:hover { border-color: var(--kraube-accent) !important; box-shadow: 0 0 0 1px var(--kraube-accent) !important; }
+
+/* Search modal — brand accent border */
+.VPLocalSearchBox .shell { border: 2px solid var(--kraube-accent) !important; }
+.VPLocalSearchBox input:focus { border-color: var(--kraube-accent) !important; outline: none !important; }
+.VPLocalSearchBox .search-bar { border-color: var(--kraube-accent) !important; }
+
 /* Hide theme toggle */
 .VPNavBarAppearance,
 .VPSwitchAppearance,
