@@ -11,7 +11,7 @@
   --kraube-navy: #1e293b;
   --kraube-accent: #8b9dc3;
   --kraube-slate: #64748b;
-  --kraube-bg: #cbd5e1;
+  --kraube-bg: #e9edf1;
 
   /* Backgrounds — white, clean */
   --vp-c-bg: #ffffff;
@@ -115,7 +115,7 @@ button[aria-label="toggle dark mode"] { display: none !important; }
   justify-content: center;
   align-items: center;
   padding: 2rem;
-  background: #cbd5e1;
+  background: var(--kraube-bg);
   overflow: hidden;
   position: fixed;
   top: 0;

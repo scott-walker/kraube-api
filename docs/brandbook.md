@@ -21,7 +21,7 @@ Light, friendly, approachable — but with sharp edges. The brand conveys techni
 | **Navy** | `#1e293b` | Primary text, "KRAUBE" in logo, headings |
 | **Accent** | `#8b9dc3` | "API" in logo, secondary elements, hover states |
 | **Slate** | `#64748b` | Tagline, secondary text, descriptions |
-| **Background** | `#cbd5e1` | Landing page background, brand contexts |
+| **Background** | `#e9edf1` | Landing page background, brand contexts |
 
 ### Supporting Palette
 
@@ -31,6 +31,16 @@ Light, friendly, approachable — but with sharp edges. The brand conveys techni
 | **Soft** | `#f8fafc` | Code blocks, table headers, subtle backgrounds |
 | **Border** | `#e2e8f0` | Thin borders, table rules, dividers |
 | **Muted** | `#f1f5f9` | Separator lines, sidebar borders |
+
+### CSS Variables
+
+```css
+--kraube-navy:         #1e293b;
+--kraube-accent:       #8b9dc3;
+--kraube-slate:        #64748b;
+--kraube-bg:           #e9edf1;
+--kraube-font-heading: 'Alegreya Sans SC', sans-serif;
+```
 
 ## Logo
 
