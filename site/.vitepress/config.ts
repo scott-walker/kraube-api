@@ -7,7 +7,29 @@ export default defineConfig({
   ignoreDeadLinks: [/localhost/],
   appearance: false,
   markdown: {
-    theme: 'css-variables',
+    theme: {
+      name: 'kraube-dark',
+      type: 'dark',
+      colors: {
+        'editor.background': '#2b3140',
+        'editor.foreground': '#cbd5e1',
+      },
+      settings: [
+        { scope: ['comment', 'punctuation.definition.comment'], settings: { foreground: '#6b7a8d' } },
+        { scope: ['keyword', 'storage', 'keyword.control', 'keyword.operator.expression'], settings: { foreground: '#e2e8f0', fontStyle: 'bold' } },
+        { scope: ['string', 'string.quoted'], settings: { foreground: '#8b9dc3' } },
+        { scope: ['entity.name.function', 'support.function'], settings: { foreground: '#a8bbd4' } },
+        { scope: ['entity.name.type', 'support.type', 'storage.type'], settings: { foreground: '#94a8c4' } },
+        { scope: ['variable', 'variable.other', 'variable.parameter'], settings: { foreground: '#cbd5e1' } },
+        { scope: ['constant', 'constant.numeric', 'constant.language'], settings: { foreground: '#e2e8f0' } },
+        { scope: ['punctuation', 'meta.brace', 'punctuation.separator'], settings: { foreground: '#7b8a9e' } },
+        { scope: ['keyword.operator', 'keyword.operator.assignment'], settings: { foreground: '#94a3b8' } },
+        { scope: ['entity.name.tag'], settings: { foreground: '#e2e8f0' } },
+        { scope: ['entity.other.attribute-name'], settings: { foreground: '#94a8c4' } },
+        { scope: ['meta.object-literal.key'], settings: { foreground: '#a8bbd4' } },
+        { scope: ['source'], settings: { foreground: '#cbd5e1' } },
+      ],
+    },
   },
   head: [
     ['link', { rel: 'preconnect', href: 'https://fonts.googleapis.com' }],

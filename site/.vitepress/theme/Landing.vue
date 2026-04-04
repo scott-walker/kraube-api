@@ -7,12 +7,16 @@
       </div>
 
       <div class="install">
-        <div class="code-block" @click="copy" :title="copied ? 'Copied!' : 'Click to copy'">
+        <div class="code-block">
+          <button class="copy-btn" @click="copy">
+            <svg v-if="!copied" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg>
+            <svg v-else xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 14 2 2 4-4"/><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg>
+          </button>
           <span class="comment"># install</span><br>
-          <span class="prompt">$ </span>go get github.com/scott-walker/kraube-api<br>
+          <span class="prompt">$ </span><span class="cmd">go</span> get github.com/scott-walker/kraube-api<br>
           <br>
           <span class="comment"># authenticate</span><br>
-          <span class="prompt">$ </span>kraube login
+          <span class="prompt">$ </span><span class="cmd">kraube</span> login
         </div>
       </div>
 

@@ -31,41 +31,41 @@
   --vp-c-divider: #f1f5f9;
   --vp-c-gutter: #f1f5f9;
 
-  /* Code blocks */
-  --vp-code-bg: #f8fafc;
+  /* Code blocks — dark navy */
+  --vp-code-bg: #2b3140;
   --vp-c-mute: #f1f5f9;
   --vp-c-mute-dark: #e2e8f0;
   --vp-c-mute-darker: #cbd5e1;
 
-  /* Syntax highlighting — brand palette */
-  --shiki-color-text: #334155;
-  --shiki-color-background: #f8fafc;
-  --shiki-token-constant: #1e293b;
-  --shiki-token-string: #6b7fa3;
-  --shiki-token-comment: #94a3b8;
-  --shiki-token-keyword: #1e293b;
-  --shiki-token-parameter: #475569;
-  --shiki-token-function: #4a6491;
-  --shiki-token-string-expression: #6b7fa3;
-  --shiki-token-punctuation: #94a3b8;
-  --shiki-token-link: #4a6491;
+  /* Syntax highlighting — brand dark palette */
+  --shiki-color-text: #cbd5e1;
+  --shiki-color-background: #2b3140;
+  --shiki-token-constant: #e2e8f0;
+  --shiki-token-string: #8b9dc3;
+  --shiki-token-comment: #6b7a8d;
+  --shiki-token-keyword: #e2e8f0;
+  --shiki-token-parameter: #cbd5e1;
+  --shiki-token-function: #a8bbd4;
+  --shiki-token-string-expression: #8b9dc3;
+  --shiki-token-punctuation: #7b8a9e;
+  --shiki-token-link: #a8bbd4;
 }
 
-/* Scrollbars — barely visible */
+/* Scrollbars — ghost-like, barely visible */
 * {
   scrollbar-width: thin;
-  scrollbar-color: #e8ecf0 transparent;
+  scrollbar-color: #eef0f3 transparent;
 }
 
-::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #e8ecf0; border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: #d0d5db; }
+::-webkit-scrollbar-thumb { background: #eef0f3; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #e4e7eb; }
 
 .vp-doc div[class*="language-"] ::-webkit-scrollbar { height: 3px; }
 .vp-doc div[class*="language-"] ::-webkit-scrollbar-track { background: transparent; }
-.vp-doc div[class*="language-"] ::-webkit-scrollbar-thumb { background: #eef1f4; border-radius: 2px; }
-.vp-doc div[class*="language-"] ::-webkit-scrollbar-thumb:hover { background: #e2e6ea; }
+.vp-doc div[class*="language-"] ::-webkit-scrollbar-thumb { background: #f2f4f6; border-radius: 2px; }
+.vp-doc div[class*="language-"] ::-webkit-scrollbar-thumb:hover { background: #eaecef; }
 
 /* Nav — white bg, thin bottom border */
 .VPNav { border-bottom: 1px solid #f1f5f9 !important; background: #ffffff !important; }
@@ -87,28 +87,64 @@
 .VPLocalSearchBox input:focus { border-color: var(--kraube-accent) !important; outline: none !important; }
 .VPLocalSearchBox .search-bar { border-color: var(--kraube-accent) !important; }
 
+/* Search modal — hide detail-mode toggle and browser clear button */
+.VPLocalSearchBox button[title="Toggle detailed view"] { display: none !important; }
+.VPLocalSearchBox input[type="search"]::-webkit-search-cancel-button { -webkit-appearance: none !important; display: none !important; }
+.VPLocalSearchBox input[type="search"]::-ms-clear { display: none !important; }
+/* Search modal — all icons and buttons in brand slate */
+.VPLocalSearchBox button,
+.VPLocalSearchBox svg { color: #94a3b8 !important; stroke: #94a3b8 !important; fill: none !important; }
+.VPLocalSearchBox button:hover,
+.VPLocalSearchBox button:hover svg { color: #64748b !important; stroke: #64748b !important; }
+
+/* Search modal keyboard hints */
+.VPLocalSearchBox .search-keyboard-shortcuts span kbd,
+.VPLocalSearchBox footer kbd {
+  background: #f1f5f9 !important;
+  border: 1px solid #e2e8f0 !important;
+  color: #94a3b8 !important;
+  box-shadow: none !important;
+}
+.VPLocalSearchBox .search-keyboard-shortcuts span,
+.VPLocalSearchBox footer span {
+  color: #94a3b8 !important;
+}
+
 /* Hide theme toggle */
 .VPNavBarAppearance,
 .VPSwitchAppearance,
 button[aria-label="toggle dark mode"] { display: none !important; }
 
 /* Table styling */
-/* Syntax highlighting — force brand palette via direct selectors */
-.vp-doc div[class*="language-"] code .line span[style*="color:#"] {
-  /* Fallback: ensure all tokens respect brand range */
+/* Code blocks — force dark background */
+.vp-doc div[class*="language-"] { background: #2b3140 !important; }
+.vp-doc div[class*="language-"] pre { background: #2b3140 !important; }
+.vp-doc div[class*="language-"] code { color: #cbd5e1 !important; }
+.vp-doc div[class*="language-"] .shiki { background: #2b3140 !important; }
+
+/* Copy button — override VitePress vars for dark code blocks */
+.vp-doc div[class*="language-"] {
+  --vp-code-copy-code-border-color: transparent;
+  --vp-code-copy-code-bg: transparent;
+  --vp-code-copy-code-hover-border-color: transparent;
+  --vp-code-copy-code-hover-bg: transparent;
+  --vp-code-copy-code-active-text: #ffffff;
+  --vp-icon-copy: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' stroke='%236b7a8d' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' viewBox='0 0 24 24'%3E%3Crect width='8' height='4' x='8' y='2' rx='1' ry='1'/%3E%3Cpath d='M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2'/%3E%3C/svg%3E");
+  --vp-icon-copied: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' stroke='%23ffffff' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' viewBox='0 0 24 24'%3E%3Crect width='8' height='4' x='8' y='2' rx='1' ry='1'/%3E%3Cpath d='M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2'/%3E%3Cpath d='m9 14 2 2 4-4'/%3E%3C/svg%3E");
 }
-.shiki, .vp-code {
-  --shiki-color-text: #334155 !important;
-  --shiki-color-background: #f8fafc !important;
-  --shiki-token-constant: #1e293b !important;
-  --shiki-token-string: #6b7fa3 !important;
-  --shiki-token-comment: #94a3b8 !important;
-  --shiki-token-keyword: #1e293b !important;
-  --shiki-token-parameter: #475569 !important;
-  --shiki-token-function: #4a6491 !important;
-  --shiki-token-string-expression: #6b7fa3 !important;
-  --shiki-token-punctuation: #94a3b8 !important;
-  --shiki-token-link: #4a6491 !important;
+/* Copied state — no bg change, no border on ::before label */
+.vp-doc [class*='language-'] > button.copy.copied::before {
+  border: none !important;
+  background-color: transparent !important;
+  color: #ffffff !important;
+}
+/* Language label */
+.vp-doc div[class*="language-"] span.lang { color: #4e5563 !important; }
+
+/* Inline code — light bg to contrast with dark code blocks */
+.vp-doc :not(pre) > code {
+  background: #eef1f5 !important;
+  color: #334155 !important;
 }
 
 .vp-doc table { border-collapse: collapse; }
@@ -190,8 +226,8 @@ button[aria-label="toggle dark mode"] { display: none !important; }
 .landing .code-block {
   font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
   font-size: 0.95rem;
-  background: #1e293b;
-  color: #f8fafc;
+  background: #2b3140;
+  color: #cbd5e1;
   padding: 1rem 1.25rem;
   border-radius: 8px;
   line-height: 1.6;
@@ -200,9 +236,24 @@ button[aria-label="toggle dark mode"] { display: none !important; }
   transition: opacity 0.15s;
 }
 
-.landing .code-block:hover { opacity: 0.9; }
-.landing .code-block .prompt { color: #64748b; user-select: none; }
-.landing .code-block .comment { color: #64748b; }
+.landing .code-block { position: relative; }
+.landing .code-block .prompt { color: #6b7a8d; user-select: none; }
+.landing .code-block .comment { color: #6b7a8d; }
+.landing .code-block .cmd { color: #8b9dc3; }
+.landing .copy-btn {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  background: transparent;
+  border: none;
+  color: #6b7a8d;
+  cursor: pointer;
+  padding: 4px;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s;
+}
+.landing .code-block:hover .copy-btn { opacity: 1; }
+.landing .copy-btn:hover { color: #ffffff; }
 
 .landing .features {
   display: grid;
