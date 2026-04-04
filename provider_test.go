@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"sync/atomic"
 	"testing"
 )
@@ -13,7 +12,7 @@ import (
 func newMockTokenServer(t *testing.T, accessToken, refreshToken string) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"access_token":  accessToken,
 			"refresh_token": refreshToken,
 			"expires_in":    3600,
@@ -47,7 +46,7 @@ func TestTokenManager_CachesAccessToken(t *testing.T) {
 	var calls atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"access_token": "access-cached",
 			"expires_in":   3600,
 		})
@@ -58,9 +57,9 @@ func TestTokenManager_CachesAccessToken(t *testing.T) {
 	m := newTokenManager("my-refresh")
 	ctx := context.Background()
 
-	m.Token(ctx)
-	m.Token(ctx)
-	m.Token(ctx)
+	_, _ = m.Token(ctx)
+	_, _ = m.Token(ctx)
+	_, _ = m.Token(ctx)
 
 	if c := calls.Load(); c != 1 {
 		t.Errorf("refresh called %d times, want 1 (cached)", c)
@@ -112,8 +111,7 @@ func TestEnvTokenManager(t *testing.T) {
 	withMockTokenURL(t, server)
 
 	const envVar = "KRAUBE_TEST_TOKEN_12345"
-	os.Setenv(envVar, "env-refresh-token")
-	defer os.Unsetenv(envVar)
+	t.Setenv(envVar, "env-refresh-token")
 
 	m := newEnvTokenManager(envVar)
 	got, err := m.Token(context.Background())

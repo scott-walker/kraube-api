@@ -61,14 +61,14 @@ func TestContentMarshalJSON_Blocks(t *testing.T) {
 func TestContentUnmarshalJSON(t *testing.T) {
 	// String content.
 	var c1 Content
-	json.Unmarshal([]byte(`"hello"`), &c1)
+	_ = json.Unmarshal([]byte(`"hello"`), &c1)
 	if c1.Text != "hello" {
 		t.Errorf("Text = %q, want hello", c1.Text)
 	}
 
 	// Blocks content.
 	var c2 Content
-	json.Unmarshal([]byte(`[{"type":"text","text":"hi"}]`), &c2)
+	_ = json.Unmarshal([]byte(`[{"type":"text","text":"hi"}]`), &c2)
 	if len(c2.Blocks) != 1 {
 		t.Fatalf("blocks = %d, want 1", len(c2.Blocks))
 	}

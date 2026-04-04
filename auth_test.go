@@ -49,7 +49,7 @@ func TestLoadToken_NotFound(t *testing.T) {
 func TestLoadToken_Empty(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "token")
-	os.WriteFile(path, []byte(""), 0600)
+	_ = os.WriteFile(path, []byte(""), 0600)
 
 	_, err := LoadToken(path)
 	if err == nil {
@@ -63,7 +63,7 @@ func TestLoadToken_Empty(t *testing.T) {
 func TestLoadToken_TrimsWhitespace(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "token")
-	os.WriteFile(path, []byte("  my-token\n  "), 0600)
+	_ = os.WriteFile(path, []byte("  my-token\n  "), 0600)
 
 	got, err := LoadToken(path)
 	if err != nil {
@@ -180,14 +180,14 @@ func TestRefreshAccessToken(t *testing.T) {
 			t.Errorf("method = %s, want POST", r.Method)
 		}
 		var body map[string]string
-		json.NewDecoder(r.Body).Decode(&body)
+		_ = json.NewDecoder(r.Body).Decode(&body)
 		if body["grant_type"] != "refresh_token" {
 			t.Errorf("grant_type = %q, want refresh_token", body["grant_type"])
 		}
 		if body["refresh_token"] != "my-refresh" {
 			t.Errorf("refresh_token = %q, want my-refresh", body["refresh_token"])
 		}
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"access_token":  "new-access",
 			"refresh_token": "new-refresh",
 			"expires_in":    3600,
@@ -217,7 +217,7 @@ func TestRefreshAccessToken(t *testing.T) {
 
 func TestRefreshAccessToken_KeepsOldRefreshToken(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"access_token": "new-access",
 			"expires_in":   3600,
 			// No refresh_token in response.

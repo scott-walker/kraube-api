@@ -61,7 +61,11 @@ jobs:
             --include="*.json" \
             --include="*.yml" \
             --exclude-dir=.git \
-            --exclude-dir=vendor; then
+            --exclude-dir=vendor \
+            --exclude="CHANGELOG.md" \
+            --exclude="brandbook.md" \
+            --exclude="ci.yml" \
+            --exclude="release.md" | grep -v "Never use" | grep -v "kraube-go.*branding"; then
             echo "ERROR: Found references to old 'kraube-go' branding. Use 'scott-walker/kraube-api'."
             exit 1
           fi

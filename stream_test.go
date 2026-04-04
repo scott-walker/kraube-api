@@ -35,7 +35,7 @@ data: {"type":"message_stop"}
 `
 
 	stream := newTestStream(sse)
-	defer stream.Close()
+	defer func() { _ = stream.Close() }()
 
 	var texts []string
 	for stream.Next() {
@@ -90,7 +90,7 @@ data: {"type":"message_stop"}
 `
 
 	stream := newTestStream(sse)
-	defer stream.Close()
+	defer func() { _ = stream.Close() }()
 
 	var toolStartName string
 	var toolStopInput string
@@ -162,7 +162,7 @@ data: {"type":"message_stop"}
 `
 
 	stream := newTestStream(sse)
-	defer stream.Close()
+	defer func() { _ = stream.Close() }()
 
 	var thinkingDelta string
 	for stream.Next() {
@@ -209,7 +209,7 @@ data: {"type":"message_stop"}
 `
 
 	stream := newTestStream(sse)
-	defer stream.Close()
+	defer func() { _ = stream.Close() }()
 
 	var types []string
 	for stream.Next() {
@@ -240,7 +240,7 @@ data: {"type":"message_stop"}
 `
 
 	stream := newTestStream(sse)
-	defer stream.Close()
+	defer func() { _ = stream.Close() }()
 
 	for stream.Next() {
 		if stream.CurrentBlock() != nil {
@@ -259,7 +259,7 @@ data: {"type":"message_stop"}
 `
 
 	stream := newTestStream(sse)
-	defer stream.Close()
+	defer func() { _ = stream.Close() }()
 
 	// Before first Next().
 	if stream.Event() != nil {
@@ -297,7 +297,7 @@ data: {"type":"message_stop"}
 `
 
 	stream := newTestStream(sse)
-	defer stream.Close()
+	defer func() { _ = stream.Close() }()
 
 	// Old-style usage: just iterate without checking events.
 	for stream.Next() {
