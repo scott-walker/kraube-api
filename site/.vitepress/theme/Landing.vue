@@ -2,7 +2,7 @@
   <div class="landing">
     <div class="landing-container">
       <div class="hero">
-        <img src="/kraube-api/brand-int-text-2.png" alt="Kraube API" class="brand-logo">
+        <img :src="withBase('/brand-int-text-2.png')" alt="Kraube API" class="brand-logo">
         <p class="tagline">Lightweight Go gateway for Anthropic Messages API via OAuth subscription.</p>
       </div>
 
