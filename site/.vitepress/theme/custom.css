@@ -175,9 +175,9 @@ button[aria-label="toggle dark mode"] { display: none !important; }
   min-height: 100vh;
   display: flex;
   flex-direction: column;
-  justify-content: center;
+  justify-content: flex-start;
   align-items: center;
-  padding: 2rem;
+  padding: 3rem 2rem;
   background: var(--kraube-bg);
   overflow-y: auto;
   overflow-x: hidden;
@@ -198,6 +198,7 @@ button[aria-label="toggle dark mode"] { display: none !important; }
   display: flex;
   flex-direction: column;
   gap: 2.5rem;
+  margin: auto 0;
 }
 
 .landing .hero {
