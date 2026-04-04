@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 )
@@ -59,27 +58,15 @@ func betaHeadersForModel(model string) string {
 	return betaBasic
 }
 
-// AuthMode determines how the client authenticates.
-type AuthMode int
-
-const (
-	// AuthOAuth uses OAuth Bearer token (subscription-based access via claude.ai).
-	AuthOAuth AuthMode = iota
-	// AuthAPIKey uses X-API-Key header (direct API key access).
-	AuthAPIKey
-)
-
 // Client is the Anthropic API client.
 type Client struct {
 	BaseURL    string
 	APIVersion string
 	HTTPClient *http.Client
 
-	// Auth
-	AuthMode    AuthMode
-	APIKey      string       // for AuthAPIKey
-	Credentials *Credentials // for AuthOAuth
-	CredsPath   string       // path to credentials file (for auto-save after refresh)
+	// Auth (OAuth only — subscription-based access via claude.ai).
+	Credentials *Credentials  // current token snapshot from Provider
+	Provider    TokenProvider // OAuth token source
 
 	// OAuth profile (fetched on init for metadata.user_id).
 	Profile   *Profile
@@ -93,99 +80,67 @@ type Client struct {
 	Messages *MessagesService
 }
 
-// NewClientOAuth creates a client using OAuth credentials.
-// It loads credentials from the given path (or default), refreshes if expired,
-// fetches the user profile, and saves updated credentials back.
-func NewClientOAuth(ctx context.Context, credsPath string) (*Client, error) {
-	if credsPath == "" {
-		credsPath = DefaultCredentialsPath()
+// NewClient creates a client with the given options.
+//
+//	client, err := kraube.NewClient(ctx, kraube.WithAccessToken("..."))
+//	client, err := kraube.NewClient(ctx, kraube.WithCredentialsFile(""))
+//	client, err := kraube.NewClient(ctx, kraube.WithTokenProvider(myProvider))
+func NewClient(ctx context.Context, opts ...Option) (*Client, error) {
+	cfg := &clientConfig{
+		rateLimitPath: DefaultRateLimitPath(),
+	}
+	for _, opt := range opts {
+		opt(cfg)
 	}
 
-	logDebug("client: loading oauth credentials", "path", credsPath)
-	creds, err := LoadCredentials(credsPath)
-	if err != nil {
-		return nil, fmt.Errorf("load credentials: %w (run Login first)", err)
+	if cfg.provider == nil {
+		return nil, fmt.Errorf("no token source specified: use WithAccessToken, WithCredentialsFile, WithTokenProvider, etc")
 	}
-	logDebug("client: credentials loaded", "expired", creds.IsExpired(), "expires_at", creds.ExpiresAt)
 
 	c := &Client{
 		BaseURL:       DefaultBaseURL,
 		APIVersion:    DefaultAPIVersion,
-		HTTPClient:    &http.Client{Transport: newChromeTransport()},
-		AuthMode:      AuthOAuth,
-		Credentials:   creds,
-		CredsPath:     credsPath,
-		RateLimitPath: DefaultRateLimitPath(),
+		RateLimitPath: cfg.rateLimitPath,
 	}
-	c.Messages = &MessagesService{client: c}
 
-	// Auto-refresh if expired.
-	if creds.IsExpired() {
-		logInfo("client: token expired, refreshing on init")
-		if err := c.refreshCredentials(ctx); err != nil {
-			return nil, fmt.Errorf("refresh token: %w", err)
+	if cfg.baseURL != "" {
+		c.BaseURL = cfg.baseURL
+	}
+	if cfg.httpClient != nil {
+		c.HTTPClient = cfg.httpClient
+	} else {
+		c.HTTPClient = &http.Client{Transport: newChromeTransport()}
+	}
+
+	// Resolve deferred providers.
+	provider := cfg.provider
+	if p, ok := provider.(*deferredFileProvider); ok {
+		fp, err := NewFileTokenProvider(p.path)
+		if err != nil {
+			return nil, fmt.Errorf("load credentials: %w (run Login first)", err)
 		}
+		provider = fp
 	}
 
-	// Fetch profile for metadata.user_id (required by API for OAuth).
-	if err := c.fetchProfile(ctx); err != nil {
-		logWarn("client: failed to fetch profile", "error", err)
-	}
+	c.Provider = provider
 
-	logDebug("client: ready", "auth_mode", "oauth", "base_url", c.BaseURL)
-	return c, nil
-}
-
-// NewClientFromClaude creates a client reusing Claude Code's OAuth credentials
-// (~/.claude/{profile}/.credentials.json).
-func NewClientFromClaude(ctx context.Context) (*Client, error) {
-	logDebug("client: loading credentials from claude code")
-	creds, err := LoadClaudeCredentials()
+	// Get initial credentials snapshot.
+	creds, err := provider.Token(ctx)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("get initial token: %w", err)
 	}
-	logDebug("client: claude credentials loaded", "expired", creds.IsExpired(), "expires_at", creds.ExpiresAt)
+	c.Credentials = creds
 
-	c := &Client{
-		BaseURL:       DefaultBaseURL,
-		APIVersion:    DefaultAPIVersion,
-		HTTPClient:    &http.Client{Transport: newChromeTransport()},
-		AuthMode:      AuthOAuth,
-		Credentials:   creds,
-		RateLimitPath: DefaultRateLimitPath(),
-	}
-	c.Messages = &MessagesService{client: c}
-
-	if creds.IsExpired() {
-		logInfo("client: token expired, refreshing on init")
-		if err := c.refreshCredentials(ctx); err != nil {
-			return nil, fmt.Errorf("refresh token: %w", err)
+	// Fetch profile for metadata.user_id.
+	if !cfg.skipProfile {
+		if err := c.fetchProfile(ctx); err != nil {
+			logWarn("client: failed to fetch profile", "error", err)
 		}
 	}
 
-	if err := c.fetchProfile(ctx); err != nil {
-		logWarn("client: failed to fetch profile", "error", err)
-	}
-
-	logDebug("client: ready", "auth_mode", "oauth_claude", "base_url", c.BaseURL)
-	return c, nil
-}
-
-// NewClientAPIKey creates a client using an API key.
-// If apiKey is empty, reads from ANTHROPIC_API_KEY env var.
-func NewClientAPIKey(apiKey string) *Client {
-	if apiKey == "" {
-		apiKey = os.Getenv("ANTHROPIC_API_KEY")
-	}
-	c := &Client{
-		BaseURL:    DefaultBaseURL,
-		APIVersion: DefaultAPIVersion,
-		HTTPClient: http.DefaultClient,
-		AuthMode:   AuthAPIKey,
-		APIKey:     apiKey,
-	}
 	c.Messages = &MessagesService{client: c}
-	return c
+	logDebug("client: ready", "base_url", c.BaseURL)
+	return c, nil
 }
 
 // fetchProfile retrieves the OAuth profile and sets up session/device IDs.
@@ -230,49 +185,22 @@ func generateDeviceID() string {
 	return hex.EncodeToString(h[:])
 }
 
-// refreshCredentials refreshes the OAuth token and saves to disk if CredsPath is set.
-func (c *Client) refreshCredentials(ctx context.Context) error {
-	logDebug("auth: refreshing token", "old_expires_at", c.Credentials.ExpiresAt)
-	newCreds, err := RefreshAccessToken(ctx, c.Credentials)
-	if err != nil {
-		logError("auth: refresh failed", "error", err)
-		return err
-	}
-	c.Credentials = newCreds
-	logInfo("auth: token refreshed", "new_expires_at", newCreds.ExpiresAt)
-
-	if c.CredsPath != "" {
-		if err := SaveCredentials(c.CredsPath, newCreds); err != nil {
-			logWarn("auth: failed to save refreshed credentials", "path", c.CredsPath, "error", err)
-		} else {
-			logDebug("auth: credentials saved", "path", c.CredsPath)
-		}
-	}
-	return nil
-}
-
-// ensureAuth refreshes OAuth token if needed before each request.
+// ensureAuth refreshes OAuth token via the provider before each request.
 func (c *Client) ensureAuth(ctx context.Context) error {
-	if c.AuthMode != AuthOAuth || c.Credentials == nil {
+	if c.Provider == nil {
 		return nil
 	}
-	if c.Credentials.IsExpired() {
-		logDebug("auth: token expired before request, triggering refresh")
-		return c.refreshCredentials(ctx)
+	creds, err := c.Provider.Token(ctx)
+	if err != nil {
+		return fmt.Errorf("token provider: %w", err)
 	}
+	c.Credentials = creds
 	return nil
-}
-
-func (c *Client) authModeStr() string {
-	if c.AuthMode == AuthOAuth {
-		return "oauth"
-	}
-	return "apikey"
 }
 
 // injectMetadata adds metadata.user_id for OAuth clients if not already set.
 func (c *Client) injectMetadata(req *MessageRequest) {
-	if c.AuthMode != AuthOAuth || c.Profile == nil {
+	if c.Profile == nil {
 		return
 	}
 	uid := c.metadataUserID()
@@ -291,10 +219,6 @@ func (c *Client) injectMetadata(req *MessageRequest) {
 // This is required for OAuth subscription access — without it, Sonnet and Opus
 // models return 429 rate limit errors.
 func (c *Client) injectBillingHeader(req *MessageRequest) {
-	if c.AuthMode != AuthOAuth {
-		return
-	}
-
 	billingBlock := SystemBlock{
 		Type: "text",
 		Text: billingHeader,
@@ -432,11 +356,8 @@ func (c *Client) doWithModel(ctx context.Context, method, path string, model str
 		bodyReader = bytes.NewReader(data)
 	}
 
-	url := c.BaseURL + path
-	if c.AuthMode == AuthOAuth {
-		url += "?beta=true"
-	}
-	logDebug("api: request", "method", method, "path", path, "body_bytes", bodySize, "auth_mode", c.authModeStr())
+	url := c.BaseURL + path + "?beta=true"
+	logDebug("api: request", "method", method, "path", path, "body_bytes", bodySize)
 
 	req, err := http.NewRequestWithContext(ctx, method, url, bodyReader)
 	if err != nil {
@@ -445,17 +366,11 @@ func (c *Client) doWithModel(ctx context.Context, method, path string, model str
 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Anthropic-Version", c.APIVersion)
-
-	switch c.AuthMode {
-	case AuthOAuth:
-		req.Header.Set("Authorization", "Bearer "+c.Credentials.AccessToken)
-		req.Header.Set("anthropic-dangerous-direct-browser-access", "true")
-		req.Header.Set("User-Agent", "claude-cli/2.1.92 (external, cli)")
-		req.Header.Set("x-app", "cli")
-		req.Header.Set("Anthropic-Beta", betaHeadersForModel(model))
-	case AuthAPIKey:
-		req.Header.Set("X-API-Key", c.APIKey)
-	}
+	req.Header.Set("Authorization", "Bearer "+c.Credentials.AccessToken)
+	req.Header.Set("anthropic-dangerous-direct-browser-access", "true")
+	req.Header.Set("User-Agent", "claude-cli/2.1.92 (external, cli)")
+	req.Header.Set("x-app", "cli")
+	req.Header.Set("Anthropic-Beta", betaHeadersForModel(model))
 
 	start := time.Now()
 	resp, err := c.HTTPClient.Do(req)

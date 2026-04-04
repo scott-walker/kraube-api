@@ -1,36 +1,30 @@
 # Принципы Kraube
 
-## Альтернатива Claude Code CLI
+## Шлюз, а не SDK
 
-Kraube — альтернатива Claude Code CLI на чистом Go.
-Целевой feature set = всё, что делает Claude Code.
+Kraube — легковесный шлюз для доступа к Anthropic Messages API через OAuth подписку. Не SDK с абстракциями, не фреймворк — минимальная обёртка, которая делает протокол доступным из Go.
 
-Если поведение не описано в официальной документации Anthropic API —
-**источник истины это реверс-инжиниринг бинарника Claude Code CLI**
-(`~/.local/share/claude/versions/`). Парсим, смотрим эндпоинты,
-параметры, протоколы — и реплицируем.
+## OAuth-only
 
-## OAuth-first
+Единственный способ аутентификации — OAuth Bearer token через подписку Claude Pro/Max/Team. Никаких API keys.
 
-Kraube работает через OAuth (подписка Claude Pro/Max/Team).
-Это **принципиальное решение**, а не fallback.
+OAuth flow идёт на **claude.ai** (подписка), а не на platform.claude.com (Console). Эндпоинты и client ID взяты из реверса Claude Code CLI.
 
-OAuth flow идёт на **claude.ai** (подписка), а не на platform.claude.com (Console/API keys).
-Эндпоинты и client ID берутся из реверса Claude Code CLI.
+## Stateless
 
-API key поддерживается как альтернатива, но основной сценарий —
-пользователь подписки, который хочет работать с Claude без Node.js.
+Клиент не знает откуда пришёл токен. Всё через `TokenProvider` — интерфейс с одним методом:
 
-## Приоритет аутентификации
+```go
+type TokenProvider interface {
+    Token(ctx context.Context) (*Credentials, error)
+}
+```
 
-1. **`NewClientOAuth(ctx, "")`** — собственный OAuth flow, credentials в `~/.config/kraube/credentials.json`
-2. **`NewClientFromClaude(ctx)`** — импорт из Claude Code (`~/.claude/.credentials.json`)
-3. **`NewClientAPIKey(apiKey)`** — API key для программного использования
+Файл, env variable, Vault, Redis, callback — любой источник. Клиент просто вызывает `Token()` перед каждым запросом.
 
-CLI:
-1. **`kraube login`** — OAuth через браузер
-2. **`kraube login --claude`** — импорт из Claude Code
-3. API key через библиотеку (CLI не поддерживает)
+## Reverse-engineering как источник истины
+
+Если поведение не описано в официальной документации Anthropic API — **источник истины это бинарник Claude Code CLI** (`~/.local/share/claude/versions/`). Парсим, смотрим эндпоинты, параметры, протоколы — и реплицируем.
 
 ## Формат credentials
 
@@ -42,24 +36,16 @@ CLI:
 }
 ```
 
-Хранится в `~/.config/kraube/credentials.json` (XDG-совместимо).
-Права файла: `0600`.
+Для `WithCredentialsFile` хранится в `~/.config/kraube/credentials.json` (XDG-совместимо, права `0600`).
 
 ## Auto-refresh
 
-Клиент автоматически обновляет token перед каждым запросом, если до
-истечения осталось менее 60 секунд. Обновлённые credentials
-автоматически сохраняются на диск.
+`CredentialsProvider` и `FileTokenProvider` автоматически рефрешат токен, если до истечения осталось менее 60 секунд. `FileTokenProvider` сохраняет обновлённые credentials обратно на диск.
 
-## Zero dependencies
+## Минимум зависимостей
 
-Только Go stdlib. Никаких сторонних библиотек. Это не ограничение —
-это выбор. Чем меньше зависимостей, тем выше надёжность и
-предсказуемость.
+Только Go stdlib + uTLS (для Chrome TLS fingerprint). Чем меньше зависимостей, тем выше надёжность и предсказуемость.
 
 ## Библиотека, а не фреймворк
 
-Kraube — это набор типов и функций. Не навязывает архитектуру.
-Хочешь agent loop — пиши свой. Хочешь TUI — используй любую
-библиотеку. Kraube даёт фундамент: типизированный HTTP-клиент
-с полным покрытием Anthropic API.
+Kraube — набор типов и функций. Не навязывает архитектуру. Хочешь agent loop — пиши свой. Хочешь TUI — используй любую библиотеку. Kraube даёт фундамент: типизированный HTTP-клиент с полным покрытием Messages API.

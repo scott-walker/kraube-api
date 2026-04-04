@@ -2,9 +2,8 @@
 
 ## Принцип
 
-Kraube — альтернатива Claude Code CLI на чистом Go.
-Никаких внешних зависимостей, только stdlib.
-Прямая работа с HTTP API через OAuth (подписка) или API key.
+Легковесный Go-шлюз для Anthropic Messages API через OAuth подписку.
+Минимум зависимостей, stateless дизайн.
 
 ## Слои
 
@@ -17,13 +16,22 @@ Kraube — альтернатива Claude Code CLI на чистом Go.
 │  ├── Messages.Stream()          │  ← SSE streaming
 │  └── Messages.CountTokens()     │  ← подсчёт токенов
 ├─────────────────────────────────┤
+│  TokenProvider                  │  ← интерфейс: откуда токен
+│  ├── StaticTokenProvider        │  ← фиксированный access token
+│  ├── CredentialsProvider        │  ← credentials + авто-рефреш
+│  ├── FileTokenProvider          │  ← JSON файл + рефреш на диск
+│  ├── EnvTokenProvider           │  ← из env variable
+│  └── CallbackTokenProvider      │  ← произвольная функция
+├─────────────────────────────────┤
 │  Auth (auth.go)                 │  ← OAuth PKCE + token refresh
 │  ├── Login()                    │  ← browser → code → tokens
-│  ├── RefreshAccessToken()       │  ← auto-refresh
-│  ├── LoadCredentials()          │  ← ~/.config/kraube/credentials.json
-│  └── LoadClaudeCredentials()    │  ← ~/.claude/.credentials.json
+│  ├── LoginManual()              │  ← headless login
+│  └── RefreshAccessToken()       │  ← рефреш токена
 ├─────────────────────────────────┤
-│  HTTP transport (client.do)     │  ← JSON → HTTP → JSON
+│  HTTP transport                 │  ← JSON → HTTP → JSON
+│  ├── billing header injection   │  ← обязателен для подписки
+│  ├── metadata.user_id           │  ← device_id, account_uuid
+│  └── Chrome TLS (uTLS)         │  ← обход Cloudflare
 ├─────────────────────────────────┤
 │  Типы (types.go, request.go)    │  ← полная типизация API
 ├─────────────────────────────────┤
@@ -31,13 +39,31 @@ Kraube — альтернатива Claude Code CLI на чистом Go.
 └─────────────────────────────────┘
 ```
 
-## Конструкторы клиента
+## Создание клиента
 
-| Функция | Режим | Описание |
-|---------|-------|----------|
-| `NewClientOAuth(ctx, "")` | OAuth | Основной. Загружает credentials, auto-refresh |
-| `NewClientFromClaude(ctx)` | OAuth | Импорт из Claude Code |
-| `NewClientAPIKey(apiKey)` | API Key | Альтернатива для программного доступа |
+Единый конструктор `NewClient` с functional options:
+
+```go
+// Из файла
+client, err := kraube.NewClient(ctx, kraube.WithCredentialsFile(""))
+
+// Статичный токен
+client, err := kraube.NewClient(ctx, kraube.WithAccessToken(token))
+
+// Env variable
+client, err := kraube.NewClient(ctx, kraube.WithEnvToken("KRAUBE_TOKEN"))
+
+// Кастомный провайдер
+client, err := kraube.NewClient(ctx, kraube.WithTokenProvider(myProvider))
+
+// С опциями
+client, err := kraube.NewClient(ctx,
+    kraube.WithAccessToken(token),
+    kraube.WithBaseURL("https://custom.endpoint"),
+    kraube.WithHTTPClient(customHTTP),
+    kraube.WithoutProfile(),
+)
+```
 
 ## Файлы
 
@@ -45,11 +71,16 @@ Kraube — альтернатива Claude Code CLI на чистом Go.
 |------|----------------|
 | `doc.go` | Package-level документация |
 | `models.go` | Константы моделей |
-| `types.go` | Типы данных API: Message, ContentBlock, Tool, Schema, ThinkingConfig и т.д. |
+| `types.go` | Типы данных API: Message, ContentBlock, Tool, Schema и т.д. |
 | `request.go` | Request/Response структуры, APIError, streaming events |
-| `client.go` | HTTP-клиент, MessagesService, StreamReader, AuthMode |
+| `client.go` | HTTP-клиент, MessagesService, StreamReader |
 | `auth.go` | OAuth PKCE flow, token refresh, credentials persistence |
-| `cmd/kraube/` | CLI: login, query, stream |
+| `provider.go` | TokenProvider интерфейс и встроенные реализации |
+| `options.go` | Functional options для NewClient |
+| `transport.go` | Chrome TLS fingerprint (uTLS) |
+| `ratelimit.go` | Rate limit парсинг и кеширование |
+| `log.go` | Опциональное slog-логирование |
+| `cmd/kraube/` | CLI: login, query, stream, usage |
 
 ## Принципы проектирования
 
@@ -61,9 +92,9 @@ Kraube — альтернатива Claude Code CLI на чистом Go.
 
 4. **Ошибки типизированы.** `APIError` имеет методы `IsRateLimit()`, `IsOverloaded()` и т.д.
 
-5. **Zero dependencies.** Только stdlib.
+5. **Stateless auth.** `TokenProvider` — единый интерфейс. Клиент не знает откуда токен.
 
-6. **Реверс Claude Code как источник истины.** Если API не задокументирован — смотрим бинарник Claude Code CLI (`~/.local/share/claude/versions/`).
+6. **Реверс Claude Code как источник истины.** Если API не задокументирован — смотрим бинарник Claude Code CLI.
 
 ## Что НЕ входит в библиотеку (пока)
 

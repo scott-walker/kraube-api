@@ -20,7 +20,6 @@ func main() {
 	if len(os.Args) < 2 {
 		fmt.Fprintln(os.Stderr, "Usage:")
 		fmt.Fprintln(os.Stderr, "  kraube login              — authenticate via browser")
-		fmt.Fprintln(os.Stderr, "  kraube login --claude      — reuse Claude Code credentials")
 		fmt.Fprintln(os.Stderr, "  kraube usage               — show plan usage limits")
 		fmt.Fprintln(os.Stderr, "  kraube \"your prompt\"       — send a message")
 		fmt.Fprintln(os.Stderr, "  kraube stream \"prompt\"     — stream response")
@@ -49,24 +48,6 @@ func main() {
 }
 
 func cmdLogin(ctx context.Context) {
-	// Check for --claude flag
-	for _, arg := range os.Args[2:] {
-		if arg == "--claude" {
-			creds, err := kraube.LoadClaudeCredentials()
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Failed to load Claude credentials: %v\n", err)
-				os.Exit(1)
-			}
-			path := kraube.DefaultCredentialsPath()
-			if err := kraube.SaveCredentials(path, creds); err != nil {
-				fmt.Fprintf(os.Stderr, "Failed to save credentials: %v\n", err)
-				os.Exit(1)
-			}
-			fmt.Printf("Credentials imported from Claude Code → %s\n", path)
-			return
-		}
-	}
-
 	// Manual OAuth flow: print URL, user pastes code
 	creds, err := kraube.LoginManual(ctx, func(authURL string) (string, error) {
 		fmt.Println("Open this URL in your browser:")
@@ -231,7 +212,7 @@ func cmdStream(ctx context.Context, prompt string) {
 }
 
 func mustClient(ctx context.Context) *kraube.Client {
-	client, err := kraube.NewClientOAuth(ctx, "")
+	client, err := kraube.NewClient(ctx, kraube.WithCredentialsFile(""))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Not authenticated. Run: kraube login\n")
 		os.Exit(1)

@@ -6,47 +6,73 @@
 # Сборка
 go build -o kraube ./cmd/kraube/
 
-# Логин через подписку (Claude Pro/Max/Team) — откроет браузер
+# Логин через подписку (Claude Pro/Max/Team)
 kraube login
-
-# Импорт credentials из Claude Code (без повторного логина)
-kraube login --claude
 
 # Запрос
 kraube "Что такое Go?"
 
 # Стриминг
 kraube stream "Напиши стихотворение"
+
+# Лимиты подписки
+kraube usage
 ```
 
-## Создание клиента (библиотека)
+## Создание клиента
 
 ```go
 ctx := context.Background()
 
-// OAuth — основной способ (подписка Claude Pro/Max/Team)
-client, err := kraube.NewClientOAuth(ctx, "")
+// Из сохранённых credentials (по умолчанию ~/.config/kraube/credentials.json)
+client, err := kraube.NewClient(ctx, kraube.WithCredentialsFile(""))
 
-// Импорт credentials из Claude Code
-client, err := kraube.NewClientFromClaude(ctx)
+// Из access token напрямую
+client, err := kraube.NewClient(ctx, kraube.WithAccessToken(token))
 
-// API key — альтернатива для программного доступа
-client := kraube.NewClientAPIKey("sk-ant-...")
+// Из env variable
+client, err := kraube.NewClient(ctx, kraube.WithEnvToken("KRAUBE_TOKEN"))
 
-// API key из env ANTHROPIC_API_KEY
-client := kraube.NewClientAPIKey("")
+// Из готовых credentials (с авто-рефрешем)
+client, err := kraube.NewClient(ctx, kraube.WithCredentials(&kraube.Credentials{
+    AccessToken:  "...",
+    RefreshToken: "...",
+    ExpiresAt:    1712345678000,
+}))
+
+// Свой провайдер
+client, err := kraube.NewClient(ctx, kraube.WithTokenProvider(myProvider))
 ```
 
-### Кастомизация клиента
+### Дополнительные опции
 
 ```go
-client, _ := kraube.NewClientOAuth(ctx, "")
+client, err := kraube.NewClient(ctx,
+    kraube.WithAccessToken(token),
+    kraube.WithHTTPClient(&http.Client{Timeout: 30 * time.Second}),
+    kraube.WithBaseURL("https://custom.endpoint"),
+    kraube.WithoutProfile(), // пропустить загрузку профиля
+)
+```
 
-// Свой HTTP-клиент
-client.HTTPClient = &http.Client{Timeout: 30 * time.Second}
+### Свой TokenProvider
 
-// Бета-фичи
-client.Betas = []string{"some-beta-2025"}
+```go
+type VaultProvider struct { /* ... */ }
+
+func (v *VaultProvider) Token(ctx context.Context) (*kraube.Credentials, error) {
+    secret, err := v.vault.Read(ctx, "secret/kraube")
+    if err != nil {
+        return nil, err
+    }
+    return &kraube.Credentials{
+        AccessToken:  secret["access_token"],
+        RefreshToken: secret["refresh_token"],
+        ExpiresAt:    secret["expires_at"],
+    }, nil
+}
+
+client, err := kraube.NewClient(ctx, kraube.WithTokenProvider(&VaultProvider{...}))
 ```
 
 ## Простой запрос
