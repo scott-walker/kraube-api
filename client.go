@@ -17,35 +17,137 @@ const (
 	DefaultAPIVersion = "2023-06-01"
 )
 
+// AuthMode determines how the client authenticates.
+type AuthMode int
+
+const (
+	// AuthOAuth uses OAuth Bearer token (subscription-based access).
+	AuthOAuth AuthMode = iota
+	// AuthAPIKey uses X-API-Key header (API key access).
+	AuthAPIKey
+)
+
 // Client is the Anthropic API client.
 type Client struct {
-	APIKey     string
 	BaseURL    string
 	APIVersion string
 	HTTPClient *http.Client
 	Betas      []string
 
+	// Auth
+	AuthMode    AuthMode
+	APIKey      string       // for AuthAPIKey
+	Credentials *Credentials // for AuthOAuth
+	CredsPath   string       // path to credentials file (for auto-save after refresh)
+
 	Messages *MessagesService
 }
 
-// NewClient creates a new Anthropic API client.
-// If apiKey is empty, it reads from ANTHROPIC_API_KEY env var.
-func NewClient(apiKey string) *Client {
+// NewClientOAuth creates a client using OAuth credentials.
+// It loads credentials from the given path (or default), refreshes if expired, and saves back.
+func NewClientOAuth(ctx context.Context, credsPath string) (*Client, error) {
+	if credsPath == "" {
+		credsPath = DefaultCredentialsPath()
+	}
+
+	creds, err := LoadCredentials(credsPath)
+	if err != nil {
+		return nil, fmt.Errorf("load credentials: %w (run Login first)", err)
+	}
+
+	c := &Client{
+		BaseURL:     DefaultBaseURL,
+		APIVersion:  DefaultAPIVersion,
+		HTTPClient:  http.DefaultClient,
+		AuthMode:    AuthOAuth,
+		Credentials: creds,
+		CredsPath:   credsPath,
+	}
+	c.Messages = &MessagesService{client: c}
+
+	// Auto-refresh if expired
+	if creds.IsExpired() {
+		if err := c.refreshCredentials(ctx); err != nil {
+			return nil, fmt.Errorf("refresh token: %w", err)
+		}
+	}
+
+	return c, nil
+}
+
+// NewClientFromClaude creates a client reusing Claude Code's OAuth credentials (~/.claude/.credentials.json).
+func NewClientFromClaude(ctx context.Context) (*Client, error) {
+	creds, err := LoadClaudeCredentials()
+	if err != nil {
+		return nil, err
+	}
+
+	c := &Client{
+		BaseURL:     DefaultBaseURL,
+		APIVersion:  DefaultAPIVersion,
+		HTTPClient:  http.DefaultClient,
+		AuthMode:    AuthOAuth,
+		Credentials: creds,
+	}
+	c.Messages = &MessagesService{client: c}
+
+	if creds.IsExpired() {
+		if err := c.refreshCredentials(ctx); err != nil {
+			return nil, fmt.Errorf("refresh token: %w", err)
+		}
+	}
+
+	return c, nil
+}
+
+// NewClientAPIKey creates a client using an API key.
+// If apiKey is empty, reads from ANTHROPIC_API_KEY env var.
+func NewClientAPIKey(apiKey string) *Client {
 	if apiKey == "" {
 		apiKey = os.Getenv("ANTHROPIC_API_KEY")
 	}
 	c := &Client{
-		APIKey:     apiKey,
 		BaseURL:    DefaultBaseURL,
 		APIVersion: DefaultAPIVersion,
 		HTTPClient: http.DefaultClient,
+		AuthMode:   AuthAPIKey,
+		APIKey:     apiKey,
 	}
 	c.Messages = &MessagesService{client: c}
 	return c
 }
 
+// refreshCredentials refreshes the OAuth token and saves to disk if CredsPath is set.
+func (c *Client) refreshCredentials(ctx context.Context) error {
+	newCreds, err := RefreshAccessToken(ctx, c.Credentials)
+	if err != nil {
+		return err
+	}
+	c.Credentials = newCreds
+
+	if c.CredsPath != "" {
+		_ = SaveCredentials(c.CredsPath, newCreds)
+	}
+	return nil
+}
+
+// ensureAuth refreshes OAuth token if needed before each request.
+func (c *Client) ensureAuth(ctx context.Context) error {
+	if c.AuthMode != AuthOAuth || c.Credentials == nil {
+		return nil
+	}
+	if c.Credentials.IsExpired() {
+		return c.refreshCredentials(ctx)
+	}
+	return nil
+}
+
 // do executes an HTTP request and returns the response.
 func (c *Client) do(ctx context.Context, method, path string, body any) (*http.Response, error) {
+	if err := c.ensureAuth(ctx); err != nil {
+		return nil, fmt.Errorf("auth: %w", err)
+	}
+
 	var bodyReader io.Reader
 	if body != nil {
 		data, err := json.Marshal(body)
@@ -62,10 +164,24 @@ func (c *Client) do(ctx context.Context, method, path string, body any) (*http.R
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-API-Key", c.APIKey)
 	req.Header.Set("Anthropic-Version", c.APIVersion)
+
+	switch c.AuthMode {
+	case AuthOAuth:
+		req.Header.Set("Authorization", "Bearer "+c.Credentials.AccessToken)
+		req.Header.Set("Anthropic-Beta", oauthBeta)
+	case AuthAPIKey:
+		req.Header.Set("X-API-Key", c.APIKey)
+	}
+
 	if len(c.Betas) > 0 {
-		req.Header.Set("Anthropic-Beta", strings.Join(c.Betas, ","))
+		existing := req.Header.Get("Anthropic-Beta")
+		extra := strings.Join(c.Betas, ",")
+		if existing != "" {
+			req.Header.Set("Anthropic-Beta", existing+","+extra)
+		} else {
+			req.Header.Set("Anthropic-Beta", extra)
+		}
 	}
 
 	return c.HTTPClient.Do(req)
