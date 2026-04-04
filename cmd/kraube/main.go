@@ -1,11 +1,10 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
-	"runtime"
 	"strings"
 	"time"
 
@@ -68,9 +67,20 @@ func cmdLogin(ctx context.Context) {
 		}
 	}
 
-	// Full OAuth flow
-	fmt.Println("Opening browser for authentication...")
-	creds, err := kraube.Login(ctx, openBrowser)
+	// Manual OAuth flow: print URL, user pastes code
+	creds, err := kraube.LoginManual(ctx, func(authURL string) (string, error) {
+		fmt.Println("Open this URL in your browser:")
+		fmt.Println()
+		fmt.Println("  " + authURL)
+		fmt.Println()
+		fmt.Print("Paste the code here: ")
+		reader := bufio.NewReader(os.Stdin)
+		code, err := reader.ReadString('\n')
+		if err != nil {
+			return "", err
+		}
+		return code, nil
+	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Login failed: %v\n", err)
 		os.Exit(1)
@@ -240,13 +250,3 @@ func hasFlag(flag string) bool {
 	return false
 }
 
-func openBrowser(url string) error {
-	switch runtime.GOOS {
-	case "linux":
-		return exec.Command("xdg-open", url).Start()
-	case "darwin":
-		return exec.Command("open", url).Start()
-	default:
-		return fmt.Errorf("unsupported OS: %s — open manually: %s", runtime.GOOS, url)
-	}
-}

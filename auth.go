@@ -20,10 +20,11 @@ import (
 const (
 	oauthAuthorizeURL = "https://claude.com/cai/oauth/authorize"
 	oauthTokenURL     = "https://platform.claude.com/v1/oauth/token"
-	oauthClientID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
-	oauthRedirectBase = "http://localhost"
-	oauthScopes       = "user:profile user:inference user:sessions:claude_code user:mcp_servers user:file_upload"
-	oauthBeta         = "oauth-2025-04-20"
+	oauthClientID       = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
+	oauthRedirectBase   = "http://localhost"
+	oauthManualRedirect = "https://platform.claude.com/oauth/code/callback"
+	oauthScopes         = "user:profile user:inference user:sessions:claude_code user:mcp_servers user:file_upload"
+	oauthBeta           = "oauth-2025-04-20"
 )
 
 // Credentials holds OAuth tokens for Anthropic API access.
@@ -142,6 +143,55 @@ func Login(ctx context.Context, openBrowser func(url string) error) (*Credential
 		return nil, err
 	}
 	logInfo("oauth: login successful", "expires_at", creds.ExpiresAt)
+	return creds, nil
+}
+
+// LoginManual performs OAuth login without a local callback server.
+// It prints the authorization URL and waits for the user to paste the code.
+// Ideal for headless/SSH environments.
+//
+// The readCode function should prompt the user and return the pasted code.
+func LoginManual(ctx context.Context, readCode func(authURL string) (string, error)) (*Credentials, error) {
+	logInfo("oauth: starting manual login flow")
+
+	verifier, challenge, err := generatePKCE()
+	if err != nil {
+		return nil, fmt.Errorf("generate PKCE: %w", err)
+	}
+
+	state, err := randomString(32)
+	if err != nil {
+		return nil, fmt.Errorf("generate state: %w", err)
+	}
+
+	params := url.Values{
+		"code":                  {"true"},
+		"client_id":             {oauthClientID},
+		"redirect_uri":          {oauthManualRedirect},
+		"response_type":         {"code"},
+		"code_challenge":        {challenge},
+		"code_challenge_method": {"S256"},
+		"scope":                 {oauthScopes},
+		"state":                 {state},
+	}
+	authURL := oauthAuthorizeURL + "?" + params.Encode()
+	logDebug("oauth: manual authorization URL built", "url", authURL)
+
+	raw, err := readCode(authURL)
+	if err != nil {
+		return nil, fmt.Errorf("read code: %w", err)
+	}
+	code := extractAuthCode(strings.TrimSpace(raw))
+	if code == "" {
+		return nil, fmt.Errorf("could not extract authorization code from input")
+	}
+	logDebug("oauth: manual code extracted", "code_len", len(code))
+
+	creds, err := exchangeCode(ctx, code, verifier, oauthManualRedirect, state)
+	if err != nil {
+		return nil, err
+	}
+	logInfo("oauth: manual login successful", "expires_at", creds.ExpiresAt)
 	return creds, nil
 }
 
@@ -460,6 +510,45 @@ func FetchProfile(ctx context.Context, accessToken string) (*Profile, error) {
 	}
 	logInfo("oauth: profile fetched", "account", p.AccountUUID, "org", p.OrganizationUUID)
 	return p, nil
+}
+
+// --- Code extraction ---
+
+// extractAuthCode extracts the OAuth authorization code from user input.
+// Handles all formats a user might paste:
+//
+//   - Raw code: "J7kB3wLmpnzZ..."
+//   - Code with URL fragment: "J7kB3wLmpnzZ...#state_value"
+//   - Full callback URL: "https://platform.claude.com/oauth/code/callback?code=J7kB3w...&state=..."
+//   - Callback URL with fragment: "https://...?code=J7kB3w...#fragment"
+//
+// The function is intentionally permissive — it tries to extract a valid code
+// from whatever the user provides rather than failing on unexpected input.
+func extractAuthCode(input string) string {
+	// Remove any surrounding whitespace, quotes, angle brackets.
+	input = strings.TrimSpace(input)
+	input = strings.Trim(input, "\"'<>")
+
+	// If it looks like a URL, parse it properly.
+	if strings.HasPrefix(input, "http://") || strings.HasPrefix(input, "https://") {
+		if u, err := url.Parse(input); err == nil {
+			if code := u.Query().Get("code"); code != "" {
+				return code
+			}
+		}
+	}
+
+	// Strip URL fragment (code#state → code).
+	if i := strings.IndexByte(input, '#'); i >= 0 {
+		input = input[:i]
+	}
+
+	// Strip query string if somehow present without URL scheme.
+	if i := strings.IndexByte(input, '?'); i >= 0 {
+		input = input[:i]
+	}
+
+	return input
 }
 
 // --- PKCE ---
