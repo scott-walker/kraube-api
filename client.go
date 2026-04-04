@@ -283,7 +283,7 @@ func (s *MessagesService) Create(ctx context.Context, req *MessageRequest) (*Mes
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, parseAPIError(resp, s.client)
@@ -311,7 +311,7 @@ func (s *MessagesService) Stream(ctx context.Context, req *MessageRequest) (*Str
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		return nil, parseAPIError(resp, s.client)
 	}
 
@@ -327,7 +327,7 @@ func (s *MessagesService) CountTokens(ctx context.Context, req *CountTokensReque
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, parseAPIError(resp, s.client)
