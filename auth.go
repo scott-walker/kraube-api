@@ -18,14 +18,19 @@ import (
 )
 
 const (
-	oauthAuthorizeURL = "https://claude.com/cai/oauth/authorize"
-	oauthTokenURL     = "https://platform.claude.com/v1/oauth/token"
+	oauthAuthorizeURL   = "https://claude.com/cai/oauth/authorize"
 	oauthClientID       = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
 	oauthRedirectBase   = "http://localhost"
 	oauthManualRedirect = "https://platform.claude.com/oauth/code/callback"
 	oauthScopes         = "user:profile user:inference user:sessions:claude_code user:mcp_servers user:file_upload"
 	oauthBeta           = "oauth-2025-04-20"
 )
+
+// oauthTokenURL is a var (not const) so tests can override it with a mock server.
+var oauthTokenURL = "https://platform.claude.com/v1/oauth/token"
+
+// setOAuthTokenURL overrides the token URL (for testing).
+func setOAuthTokenURL(url string) { oauthTokenURL = url }
 
 // oauthTokens is the internal representation of an OAuth token pair.
 // Access tokens are short-lived (~1 hour) and managed in memory.

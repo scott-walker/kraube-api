@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.2.0] - 2026-04-04
+
+### Breaking
+- `TokenProvider` interface returns `(string, error)` instead of `(*Credentials, error)`
+- Removed `Credentials` struct — replaced with single "token" concept
+- New options: `WithToken`, `WithTokenFile` replace old credential options
+- Token stored as plain text in `~/.config/kraube/token`
+
+### Added
+- Real-time streaming events: `Event()`, `EventType()`, `CurrentBlock()`
+- `StreamEvent` interface for typed event handling via type switch
+- Unit test suite covering auth, providers, streaming, types, rate limits
+- CLI real-time text output in `kraube stream`
+
+### Changed
+- Simplified authentication: one token, access tokens managed in memory
+- Updated all documentation
+
 ## [0.1.0] - 2026-04-04
 
 ### Added
