@@ -51,21 +51,21 @@
   --shiki-token-link: #4a6491;
 }
 
-/* Scrollbars — thin, slate */
+/* Scrollbars — barely visible */
 * {
   scrollbar-width: thin;
-  scrollbar-color: #cbd5e1 transparent;
+  scrollbar-color: #e8ecf0 transparent;
 }
 
-::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar { width: 5px; height: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+::-webkit-scrollbar-thumb { background: #e8ecf0; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #d0d5db; }
 
-.vp-doc div[class*="language-"] ::-webkit-scrollbar { height: 4px; }
+.vp-doc div[class*="language-"] ::-webkit-scrollbar { height: 3px; }
 .vp-doc div[class*="language-"] ::-webkit-scrollbar-track { background: transparent; }
-.vp-doc div[class*="language-"] ::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 2px; }
-.vp-doc div[class*="language-"] ::-webkit-scrollbar-thumb:hover { background: #cbd5e1; }
+.vp-doc div[class*="language-"] ::-webkit-scrollbar-thumb { background: #eef1f4; border-radius: 2px; }
+.vp-doc div[class*="language-"] ::-webkit-scrollbar-thumb:hover { background: #e2e6ea; }
 
 /* Nav — white bg, thin bottom border */
 .VPNav { border-bottom: 1px solid #f1f5f9 !important; background: #ffffff !important; }
@@ -93,6 +93,24 @@
 button[aria-label="toggle dark mode"] { display: none !important; }
 
 /* Table styling */
+/* Syntax highlighting — force brand palette via direct selectors */
+.vp-doc div[class*="language-"] code .line span[style*="color:#"] {
+  /* Fallback: ensure all tokens respect brand range */
+}
+.shiki, .vp-code {
+  --shiki-color-text: #334155 !important;
+  --shiki-color-background: #f8fafc !important;
+  --shiki-token-constant: #1e293b !important;
+  --shiki-token-string: #6b7fa3 !important;
+  --shiki-token-comment: #94a3b8 !important;
+  --shiki-token-keyword: #1e293b !important;
+  --shiki-token-parameter: #475569 !important;
+  --shiki-token-function: #4a6491 !important;
+  --shiki-token-string-expression: #6b7fa3 !important;
+  --shiki-token-punctuation: #94a3b8 !important;
+  --shiki-token-link: #4a6491 !important;
+}
+
 .vp-doc table { border-collapse: collapse; }
 .vp-doc th, .vp-doc td { border: 1px solid #e2e8f0; }
 .vp-doc th { background: #f8fafc; color: #334155; font-weight: 600; }

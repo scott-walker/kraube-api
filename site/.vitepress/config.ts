@@ -6,6 +6,9 @@ export default defineConfig({
   base: '/kraube-api/',
   ignoreDeadLinks: [/localhost/],
   appearance: false,
+  markdown: {
+    theme: 'css-variables',
+  },
   head: [
     ['link', { rel: 'preconnect', href: 'https://fonts.googleapis.com' }],
     ['link', { rel: 'preconnect', href: 'https://fonts.gstatic.com', crossorigin: '' }],
