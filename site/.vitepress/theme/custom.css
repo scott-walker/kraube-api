@@ -37,18 +37,18 @@
   --vp-c-mute-dark: #e2e8f0;
   --vp-c-mute-darker: #cbd5e1;
 
-  /* Syntax highlighting */
+  /* Syntax highlighting — brand palette */
   --shiki-color-text: #334155;
   --shiki-color-background: #f8fafc;
-  --shiki-token-constant: #7c3aed;
-  --shiki-token-string: #059669;
+  --shiki-token-constant: #1e293b;
+  --shiki-token-string: #6b7fa3;
   --shiki-token-comment: #94a3b8;
-  --shiki-token-keyword: #2563eb;
-  --shiki-token-parameter: #1e293b;
-  --shiki-token-function: #c026d3;
-  --shiki-token-string-expression: #059669;
-  --shiki-token-punctuation: #64748b;
-  --shiki-token-link: #2563eb;
+  --shiki-token-keyword: #1e293b;
+  --shiki-token-parameter: #475569;
+  --shiki-token-function: #4a6491;
+  --shiki-token-string-expression: #6b7fa3;
+  --shiki-token-punctuation: #94a3b8;
+  --shiki-token-link: #4a6491;
 }
 
 /* Scrollbars — thin, slate */
