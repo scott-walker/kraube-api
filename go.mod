@@ -1,4 +1,4 @@
-module github.com/kraube-go/kraube
+module github.com/scott-walker/kraube-api
 
 go 1.26.1
 

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kraube-go/kraube"
+	"github.com/scott-walker/kraube-api"
 )
 
 func main() {
