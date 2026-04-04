@@ -1,6 +1,9 @@
 <div align="center">
 
-<img src="assets/brand.png" alt="Kraube API" width="480">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/brand.png">
+  <img src="assets/brand.png" alt="Kraube API" width="480" style="background: white; padding: 12px 20px; border-radius: 8px;">
+</picture>
 
 **Lightweight Go gateway for Anthropic Messages API via OAuth subscription**
 
@@ -11,7 +14,7 @@ Access Claude (Opus, Sonnet, Haiku) through your Pro/Max/Team subscription. No A
 [![Go Report Card](https://goreportcard.com/badge/github.com/scott-walker/kraube-api)](https://goreportcard.com/report/github.com/scott-walker/kraube-api)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-[Quick Start](#quick-start) · [TokenProvider](#tokenprovider) · [Usage Guide](#usage-guide) · [Releases](https://github.com/scott-walker/kraube-api/releases)
+[Documentation](https://scott-walker.github.io/kraube-api/) · [Quick Start](#quick-start) · [TokenProvider](#tokenprovider) · [Releases](https://github.com/scott-walker/kraube-api/releases)
 
 </div>
 

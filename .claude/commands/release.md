@@ -110,7 +110,18 @@ After user confirms:
    - Docs: deploys VitePress site to GitHub Pages
 4. Monitor CI: `gh run list --limit 3`
 
-### Phase 7: Post-release verification
+### Phase 7: GitHub Repository metadata
+
+Ensure the repo looks professional and complete:
+
+1. Set repo description: `gh repo edit scott-walker/kraube-api --description "Lightweight Go gateway for Anthropic Messages API via OAuth subscription"`
+2. Set homepage: `gh repo edit scott-walker/kraube-api --homepage "https://scott-walker.github.io/kraube-api/"`
+3. Ensure topics are set: go, golang, anthropic, claude, oauth, api-gateway, llm
+4. Verify README renders correctly on GitHub (brand image, badges, links)
+5. Verify "Releases" sidebar shows the new release
+6. Verify "Packages" / Go module is accessible
+
+### Phase 8: Post-release verification
 
 1. Wait for CI to complete: `gh run watch`
 2. Verify GitHub Release exists: `gh release view vX.Y.Z`
@@ -119,7 +130,7 @@ After user confirms:
 5. Verify module proxy: `curl -s "https://proxy.golang.org/github.com/scott-walker/kraube-api/@v/v$(echo X.Y.Z).info"` (replace X.Y.Z)
 6. Test local build: `go build -o kraube ./cmd/kraube/ && ./kraube --help`
 
-### Phase 8: Report
+### Phase 9: Report
 
 Print a release summary:
 - Version released
