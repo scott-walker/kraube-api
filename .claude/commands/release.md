@@ -51,7 +51,30 @@ If any check fails — STOP and report.
 6. Verify badges in README point to correct repo (scott-walker/kraube-api)
 7. Check that `go get github.com/scott-walker/kraube-api` matches go.mod module path
 
-### Phase 3: README & Release Notes
+### Phase 3: Documentation site & Landing page
+
+1. Check that `site/` builds: `cd site && npm install && npm run build`
+2. Verify landing page (site/index.md + Landing.vue):
+   - Brand logo present (brand-int-text-2.png from assets)
+   - Install command matches current module path
+   - Features list is current
+   - Links work (GitHub, Get Started, API Reference)
+   - Uses brandbook colors: navy #1e293b, accent #8b9dc3, bg #cbd5e1
+   - Font: Alegreya Sans SC for headings (brandbook font)
+   - Landing fits one screen, no scroll, no header/footer
+   - Light theme only, no dark mode toggle
+3. Verify guide pages are up to date:
+   - getting-started.md — install command, first example
+   - token-provider.md — all current providers listed
+   - Any new features have corresponding guide pages
+4. Verify reference pages:
+   - api.md — matches current API coverage in docs/api-coverage.md
+   - options.md — all With* options listed
+   - cli.md — all commands and flags
+   - changelog.md — matches CHANGELOG.md
+5. Update site/reference/changelog.md with new version entry
+
+### Phase 4: README & Release Notes
 
 Generate comprehensive release notes for the GitHub Release:
 
@@ -62,12 +85,12 @@ Generate comprehensive release notes for the GitHub Release:
    ```
    go get github.com/scott-walker/kraube-api@vX.Y.Z
    ```
-5. Add link to documentation
+5. Add link to documentation site: `https://scott-walker.github.io/kraube-api/`
 6. If breaking changes: add Migration Guide section explaining what to change
 
-Save release notes to a temporary file for Phase 5.
+Save release notes to a temporary file for Phase 6.
 
-### Phase 4: Commit & Tag
+### Phase 5: Commit & Tag
 
 1. Stage all changed files: `git add -A`
 2. Review staged changes with `git diff --cached --stat`
@@ -75,7 +98,7 @@ Save release notes to a temporary file for Phase 5.
 4. Create annotated tag: `git tag -a vX.Y.Z -m "Release vX.Y.Z"`
 5. Show the commit and tag for user confirmation before pushing
 
-### Phase 5: Push & Publish
+### Phase 6: Push & Publish
 
 After user confirms:
 
@@ -84,21 +107,24 @@ After user confirms:
 3. CI (GitHub Actions) handles:
    - GoReleaser: builds cross-platform binaries (linux/darwin/windows × amd64/arm64)
    - Creates GitHub Release with archives and checksums
+   - Docs: deploys VitePress site to GitHub Pages
 4. Monitor CI: `gh run list --limit 3`
 
-### Phase 6: Post-release verification
+### Phase 7: Post-release verification
 
 1. Wait for CI to complete: `gh run watch`
 2. Verify GitHub Release exists: `gh release view vX.Y.Z`
 3. Check release assets: all platform archives + checksums attached
-4. Verify module proxy: `curl -s "https://proxy.golang.org/github.com/scott-walker/kraube-api/@v/v$(echo X.Y.Z).info"` (replace X.Y.Z)
-5. Test local build: `go build -o kraube ./cmd/kraube/ && ./kraube --help`
+4. Verify documentation site is live: `https://scott-walker.github.io/kraube-api/`
+5. Verify module proxy: `curl -s "https://proxy.golang.org/github.com/scott-walker/kraube-api/@v/v$(echo X.Y.Z).info"` (replace X.Y.Z)
+6. Test local build: `go build -o kraube ./cmd/kraube/ && ./kraube --help`
 
-### Phase 7: Report
+### Phase 8: Report
 
 Print a release summary:
 - Version released
 - GitHub Release URL: `https://github.com/scott-walker/kraube-api/releases/tag/vX.Y.Z`
+- Documentation URL: `https://scott-walker.github.io/kraube-api/`
 - Number of changes (commits since last tag)
 - Breaking changes (if any)
 - Install command: `go get github.com/scott-walker/kraube-api@vX.Y.Z`

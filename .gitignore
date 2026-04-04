@@ -6,3 +6,6 @@
 /bin/
 .reviews/
 dist/
+site/node_modules/
+site/.vitepress/cache/
+site/.vitepress/dist/

@@ -1,0 +1,225 @@
+:root {
+  --vp-font-family-base: 'Inter', 'Helvetica Neue', Arial, sans-serif;
+  --kraube-font-heading: 'Alegreya Sans SC', 'Inter', sans-serif;
+
+  /* Brand — Kraube API brandbook palette */
+  --vp-c-brand-1: #1e293b;
+  --vp-c-brand-2: #334155;
+  --vp-c-brand-3: #8b9dc3;
+
+  /* Brand colors as CSS vars for custom use */
+  --kraube-navy: #1e293b;
+  --kraube-accent: #8b9dc3;
+  --kraube-slate: #64748b;
+  --kraube-bg: #cbd5e1;
+
+  /* Backgrounds — white, clean */
+  --vp-c-bg: #ffffff;
+  --vp-c-bg-alt: #ffffff;
+  --vp-c-bg-elv: #ffffff;
+  --vp-c-bg-soft: #f8fafc;
+  --vp-nav-bg-color: #ffffff;
+  --vp-sidebar-bg-color: #ffffff;
+
+  /* Text — brand navy and slate */
+  --vp-c-text-1: #1e293b;
+  --vp-c-text-2: #475569;
+  --vp-c-text-3: #64748b;
+
+  /* Borders — thin, barely visible */
+  --vp-c-border: #e2e8f0;
+  --vp-c-divider: #f1f5f9;
+  --vp-c-gutter: #f1f5f9;
+
+  /* Code blocks */
+  --vp-code-bg: #f8fafc;
+  --vp-c-mute: #f1f5f9;
+  --vp-c-mute-dark: #e2e8f0;
+  --vp-c-mute-darker: #cbd5e1;
+
+  /* Syntax highlighting */
+  --shiki-color-text: #334155;
+  --shiki-color-background: #f8fafc;
+  --shiki-token-constant: #7c3aed;
+  --shiki-token-string: #059669;
+  --shiki-token-comment: #94a3b8;
+  --shiki-token-keyword: #2563eb;
+  --shiki-token-parameter: #1e293b;
+  --shiki-token-function: #c026d3;
+  --shiki-token-string-expression: #059669;
+  --shiki-token-punctuation: #64748b;
+  --shiki-token-link: #2563eb;
+}
+
+/* Scrollbars — thin, slate */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+.vp-doc div[class*="language-"] ::-webkit-scrollbar { height: 4px; }
+.vp-doc div[class*="language-"] ::-webkit-scrollbar-track { background: transparent; }
+.vp-doc div[class*="language-"] ::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 2px; }
+.vp-doc div[class*="language-"] ::-webkit-scrollbar-thumb:hover { background: #cbd5e1; }
+
+/* Nav — white bg, thin bottom border */
+.VPNav { border-bottom: 1px solid #f1f5f9 !important; background: #ffffff !important; }
+.VPNavBar { background: #ffffff !important; border-bottom: 1px solid #f1f5f9 !important; }
+
+/* Sidebar — white bg, thin right border */
+.VPSidebar { background: #ffffff !important; border-right: 1px solid #f1f5f9 !important; }
+
+/* Hide theme toggle */
+.VPNavBarAppearance,
+.VPSwitchAppearance,
+button[aria-label="toggle dark mode"] { display: none !important; }
+
+/* Table styling */
+.vp-doc table { border-collapse: collapse; }
+.vp-doc th, .vp-doc td { border: 1px solid #e2e8f0; }
+.vp-doc th { background: #f8fafc; color: #334155; font-weight: 600; }
+.vp-doc tr:nth-child(2n) { background: #ffffff; }
+
+/* Headings — brand font */
+.vp-doc h1, .vp-doc h2 {
+  font-family: var(--kraube-font-heading);
+  letter-spacing: 0.02em;
+}
+
+/* Outline / sidebar section dividers */
+.VPDocAsideOutline { border-left: 1px solid #f1f5f9 !important; }
+.VPSidebarItem .items { border-left: 1px solid #f1f5f9 !important; }
+.vp-doc hr { border-top: 1px solid #f1f5f9; }
+
+/* Hide VitePress chrome on landing */
+.Layout:has(.landing) .VPNav,
+.Layout:has(.landing) .VPFooter,
+.Layout:has(.landing) .VPSidebar,
+.Layout:has(.landing) .VPDocFooter { display: none !important; }
+
+/* ─── Landing page ─── */
+
+.landing {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  padding: 2rem;
+  background: #cbd5e1;
+  overflow: hidden;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 100;
+}
+
+.landing-container {
+  max-width: 640px;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 2.5rem;
+}
+
+.landing .hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.25rem;
+}
+
+.landing .brand-logo {
+  max-width: 420px;
+  width: 100%;
+  height: auto;
+}
+
+.landing .tagline {
+  font-size: 1.15rem;
+  font-weight: 400;
+  color: #475569;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.landing .install {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.landing .code-block {
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  font-size: 0.95rem;
+  background: #1e293b;
+  color: #f8fafc;
+  padding: 1rem 1.25rem;
+  border-radius: 8px;
+  line-height: 1.6;
+  overflow-x: auto;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.landing .code-block:hover { opacity: 0.9; }
+.landing .code-block .prompt { color: #64748b; user-select: none; }
+.landing .code-block .comment { color: #64748b; }
+
+.landing .features {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+}
+
+.landing .feature {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.landing .feature-title {
+  font-family: var(--kraube-font-heading);
+  font-size: 0.95rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #1e293b;
+}
+
+.landing .feature-desc {
+  font-size: 0.95rem;
+  color: #475569;
+  line-height: 1.4;
+}
+
+.landing .links {
+  display: flex;
+  gap: 1.5rem;
+  align-items: center;
+  justify-content: center;
+}
+
+.landing .links a {
+  color: #1e293b;
+  text-decoration: none;
+  font-size: 0.95rem;
+  font-weight: 600;
+  border-bottom: 2px solid #1e293b;
+  padding-bottom: 1px;
+  transition: opacity 0.15s;
+}
+
+.landing .links a:hover { opacity: 0.6; }
+
+@media (max-width: 640px) {
+  .landing .brand-logo { max-width: 280px; }
+  .landing .features { grid-template-columns: 1fr; }
+}
