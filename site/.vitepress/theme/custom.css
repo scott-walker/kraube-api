@@ -71,6 +71,10 @@
 .VPNav { border-bottom: 1px solid #f1f5f9 !important; background: #ffffff !important; }
 .VPNavBar { background: #ffffff !important; border-bottom: 1px solid #f1f5f9 !important; }
 
+/* Nav logo */
+.VPNavBarTitle .logo { height: 28px; width: auto; }
+.VPNavBarTitle .title { font-family: var(--kraube-font-heading); font-weight: 700; letter-spacing: 0.02em; }
+
 /* Sidebar — white bg, thin right border */
 .VPSidebar { background: #ffffff !important; border-right: 1px solid #f1f5f9 !important; }
 
