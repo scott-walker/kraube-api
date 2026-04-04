@@ -1,10 +1,10 @@
-# kraube
+# Kraube API
 
 Легковесный Go-шлюз для Anthropic Messages API через OAuth подписку.
 
 ## Что это
 
-Kraube предоставляет доступ к Claude (Opus, Sonnet, Haiku) через подписку Claude Pro/Max/Team — без API key, без Node.js, без лишних зависимостей.
+Kraube API предоставляет доступ к Claude (Opus, Sonnet, Haiku) через подписку Claude Pro/Max/Team — без API key, без Node.js, без лишних зависимостей.
 
 Библиотека реплицирует HTTP-протокол Claude Code CLI: billing header, metadata, beta headers, Chrome TLS fingerprint. Всё что нужно — OAuth токен.
 
@@ -25,7 +25,7 @@ go get github.com/scott-walker/kraube-api
 
 ### 1. Аутентификация
 
-Первый шаг — получить OAuth токен. Kraube предоставляет CLI для этого:
+Первый шаг — получить OAuth токен. Kraube API предоставляет CLI для этого:
 
 ```bash
 go build -o kraube ./cmd/kraube/

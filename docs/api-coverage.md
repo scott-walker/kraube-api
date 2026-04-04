@@ -1,6 +1,6 @@
 # Покрытие Anthropic API
 
-Статус покрытия API библиотекой Kraube.
+Статус покрытия API библиотекой Kraube API.
 
 ## Messages API (`/v1/messages`)
 

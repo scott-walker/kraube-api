@@ -1,7 +1,7 @@
 // Package kraube — легковесный Go-шлюз для доступа к Anthropic Messages API
 // через OAuth подписку (Claude Pro/Max/Team).
 //
-// Kraube реплицирует HTTP-протокол Claude Code CLI — billing header,
+// Kraube API реплицирует HTTP-протокол Claude Code CLI — billing header,
 // metadata.user_id, model-specific beta headers, Chrome TLS fingerprint —
 // предоставляя полный доступ к API через подписку без API key.
 //
