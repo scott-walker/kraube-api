@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v7
+        with:
+          version: latest
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Build
+        run: go build ./...
+
+      - name: Test
+        run: go test ./... -count=1
+
+      - name: Test (race)
+        run: go test ./... -race -count=1
+
+  branding:
+    name: Branding Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for old branding references
+        run: |
+          if grep -rn "kraube-go" . \
+            --include="*.go" \
+            --include="*.md" \
+            --include="*.json" \
+            --include="*.yml" \
+            --exclude-dir=.git \
+            --exclude-dir=vendor; then
+            echo "ERROR: Found references to old 'kraube-go' branding. Use 'scott-walker/kraube-api'."
+            exit 1
+          fi
+          echo "Branding check passed."

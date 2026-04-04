@@ -3,4 +3,6 @@
 *.out
 /vendor/
 /kraube
+/bin/
 .reviews/
+dist/
