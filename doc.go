@@ -10,11 +10,11 @@
 //
 // Quick start:
 //
-//	// Из файла credentials:
-//	client, err := kraube.NewClient(ctx, kraube.WithCredentialsFile(""))
+//	// Из файла токена:
+//	client, err := kraube.NewClient(ctx, kraube.WithTokenFile(""))
 //
-//	// Из access token напрямую:
-//	client, err := kraube.NewClient(ctx, kraube.WithAccessToken(token))
+//	// Из токена напрямую:
+//	client, err := kraube.NewClient(ctx, kraube.WithToken(token))
 //
 //	// Из env variable:
 //	client, err := kraube.NewClient(ctx, kraube.WithEnvToken("KRAUBE_TOKEN"))

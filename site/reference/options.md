@@ -6,9 +6,8 @@ All options for `kraube.NewClient(ctx, ...Option)`.
 
 | Option | Description |
 |--------|-------------|
-| `WithCredentialsFile(path)` | Load from JSON file. `""` = default path. Refreshes saved back. |
-| `WithAccessToken(token)` | Static access token. No refresh. |
-| `WithCredentials(creds)` | Credentials struct. Auto-refresh if refresh_token present. |
+| `WithTokenFile(path)` | Load from file. `""` = default path. |
+| `WithToken(token)` | Direct token. |
 | `WithEnvToken(envVar)` | Read token from environment variable. |
 | `WithTokenProvider(p)` | Custom TokenProvider implementation. |
 

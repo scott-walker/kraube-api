@@ -49,7 +49,7 @@ func main() {
 
 func cmdLogin(ctx context.Context) {
 	// Manual OAuth flow: print URL, user pastes code
-	creds, err := kraube.LoginManual(ctx, func(authURL string) (string, error) {
+	token, err := kraube.LoginManual(ctx, func(authURL string) (string, error) {
 		fmt.Println("Open this URL in your browser:")
 		fmt.Println()
 		fmt.Println("  " + authURL)
@@ -67,12 +67,12 @@ func cmdLogin(ctx context.Context) {
 		os.Exit(1)
 	}
 
-	path := kraube.DefaultCredentialsPath()
-	if err := kraube.SaveCredentials(path, creds); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to save credentials: %v\n", err)
+	path := kraube.DefaultTokenPath()
+	if err := kraube.SaveToken(path, token); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to save token: %v\n", err)
 		os.Exit(1)
 	}
-	fmt.Printf("Authenticated! Credentials saved to %s\n", path)
+	fmt.Printf("Authenticated! Token saved to %s\n", path)
 }
 
 func cmdUsage(ctx context.Context) {
@@ -202,17 +202,21 @@ func cmdStream(ctx context.Context, prompt string) {
 	defer stream.Close()
 
 	for stream.Next() {
+		if evt, ok := stream.Event().(*kraube.ContentBlockDeltaEvent); ok {
+			if evt.Delta.Type == "text_delta" {
+				fmt.Print(evt.Delta.Text)
+			}
+		}
 	}
 	if err := stream.Err(); err != nil {
-		fmt.Fprintf(os.Stderr, "Stream error: %v\n", err)
+		fmt.Fprintf(os.Stderr, "\nStream error: %v\n", err)
 		os.Exit(1)
 	}
-
-	fmt.Println(stream.Message().Text())
+	fmt.Println()
 }
 
 func mustClient(ctx context.Context) *kraube.Client {
-	client, err := kraube.NewClient(ctx, kraube.WithCredentialsFile(""))
+	client, err := kraube.NewClient(ctx, kraube.WithTokenFile(""))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Not authenticated. Run: kraube login\n")
 		os.Exit(1)
@@ -230,4 +234,3 @@ func hasFlag(flag string) bool {
 	}
 	return false
 }
-

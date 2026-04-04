@@ -65,8 +65,8 @@ type Client struct {
 	HTTPClient *http.Client
 
 	// Auth (OAuth only — subscription-based access via claude.ai).
-	Credentials *Credentials  // current token snapshot from Provider
-	Provider    TokenProvider // OAuth token source
+	Provider    TokenProvider // token source
+	accessToken string       // current access token, updated by ensureAuth
 
 	// OAuth profile (fetched on init for metadata.user_id).
 	Profile   *Profile
@@ -82,8 +82,8 @@ type Client struct {
 
 // NewClient creates a client with the given options.
 //
-//	client, err := kraube.NewClient(ctx, kraube.WithAccessToken("..."))
-//	client, err := kraube.NewClient(ctx, kraube.WithCredentialsFile(""))
+//	client, err := kraube.NewClient(ctx, kraube.WithToken("..."))
+//	client, err := kraube.NewClient(ctx, kraube.WithTokenFile(""))
 //	client, err := kraube.NewClient(ctx, kraube.WithTokenProvider(myProvider))
 func NewClient(ctx context.Context, opts ...Option) (*Client, error) {
 	cfg := &clientConfig{
@@ -94,7 +94,7 @@ func NewClient(ctx context.Context, opts ...Option) (*Client, error) {
 	}
 
 	if cfg.provider == nil {
-		return nil, fmt.Errorf("no token source specified: use WithAccessToken, WithCredentialsFile, WithTokenProvider, etc")
+		return nil, fmt.Errorf("no token source specified: use WithToken, WithTokenFile, WithTokenProvider, etc")
 	}
 
 	c := &Client{
@@ -115,21 +115,25 @@ func NewClient(ctx context.Context, opts ...Option) (*Client, error) {
 	// Resolve deferred providers.
 	provider := cfg.provider
 	if p, ok := provider.(*deferredFileProvider); ok {
-		fp, err := NewFileTokenProvider(p.path)
+		token, err := LoadToken(p.path)
 		if err != nil {
-			return nil, fmt.Errorf("load credentials: %w (run Login first)", err)
+			return nil, fmt.Errorf("load token: %w (run Login first)", err)
 		}
-		provider = fp
+		tm := newTokenManager(token)
+		tm.saveFn = func(t string) error {
+			return SaveToken(p.path, t)
+		}
+		provider = tm
 	}
 
 	c.Provider = provider
 
-	// Get initial credentials snapshot.
-	creds, err := provider.Token(ctx)
+	// Get initial access token.
+	accessToken, err := provider.Token(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("get initial token: %w", err)
 	}
-	c.Credentials = creds
+	c.accessToken = accessToken
 
 	// Fetch profile for metadata.user_id.
 	if !cfg.skipProfile {
@@ -145,7 +149,7 @@ func NewClient(ctx context.Context, opts ...Option) (*Client, error) {
 
 // fetchProfile retrieves the OAuth profile and sets up session/device IDs.
 func (c *Client) fetchProfile(ctx context.Context) error {
-	profile, err := FetchProfile(ctx, c.Credentials.AccessToken)
+	profile, err := FetchProfile(ctx, c.accessToken)
 	if err != nil {
 		return err
 	}
@@ -185,16 +189,16 @@ func generateDeviceID() string {
 	return hex.EncodeToString(h[:])
 }
 
-// ensureAuth refreshes OAuth token via the provider before each request.
+// ensureAuth refreshes the access token via the provider before each request.
 func (c *Client) ensureAuth(ctx context.Context) error {
 	if c.Provider == nil {
 		return nil
 	}
-	creds, err := c.Provider.Token(ctx)
+	accessToken, err := c.Provider.Token(ctx)
 	if err != nil {
 		return fmt.Errorf("token provider: %w", err)
 	}
-	c.Credentials = creds
+	c.accessToken = accessToken
 	return nil
 }
 
@@ -366,7 +370,7 @@ func (c *Client) doWithModel(ctx context.Context, method, path string, model str
 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Anthropic-Version", c.APIVersion)
-	req.Header.Set("Authorization", "Bearer "+c.Credentials.AccessToken)
+	req.Header.Set("Authorization", "Bearer "+c.accessToken)
 	req.Header.Set("anthropic-dangerous-direct-browser-access", "true")
 	req.Header.Set("User-Agent", "claude-cli/2.1.92 (external, cli)")
 	req.Header.Set("x-app", "cli")
@@ -407,6 +411,8 @@ func (c *Client) doWithModel(ctx context.Context, method, path string, model str
 // --- StreamReader ---
 
 // StreamReader reads SSE events from a streaming response.
+// After each Next() call, Event() returns the current typed event and
+// CurrentBlock() returns the content block being built (if applicable).
 type StreamReader struct {
 	body    io.ReadCloser
 	scanner *bufio.Scanner
@@ -415,6 +421,9 @@ type StreamReader struct {
 	// Accumulated message built from stream events.
 	message    *MessageResponse
 	eventCount int
+
+	// Current event from the last Next() call.
+	currentEvent StreamEvent
 }
 
 func newStreamReader(body io.ReadCloser) *StreamReader {
@@ -426,7 +435,10 @@ func newStreamReader(body io.ReadCloser) *StreamReader {
 }
 
 // Next advances to the next SSE event. Returns false when done or on error.
+// After Next returns true, call Event() to access the current event.
 func (r *StreamReader) Next() bool {
+	r.currentEvent = nil
+
 	for r.scanner.Scan() {
 		line := r.scanner.Text()
 
@@ -444,11 +456,13 @@ func (r *StreamReader) Next() bool {
 			data := strings.TrimPrefix(dataLine, "data: ")
 
 			r.eventCount++
-			r.err = r.processEvent(eventType, []byte(data))
-			if r.err != nil {
+			evt, err := r.processEvent(eventType, []byte(data))
+			if err != nil {
+				r.err = err
 				logError("stream: processing error", "event_type", eventType, "event_num", r.eventCount, "error", r.err)
 				return false
 			}
+			r.currentEvent = evt
 
 			// message_stop means we're done.
 			if eventType == "message_stop" {
@@ -464,29 +478,31 @@ func (r *StreamReader) Next() bool {
 }
 
 // processEvent handles a single SSE event and updates the accumulated message.
-func (r *StreamReader) processEvent(eventType string, data []byte) error {
+func (r *StreamReader) processEvent(eventType string, data []byte) (StreamEvent, error) {
 	switch eventType {
 	case "message_start":
 		var evt MessageStartEvent
 		if err := json.Unmarshal(data, &evt); err != nil {
-			return err
+			return nil, err
 		}
 		r.message = &evt.Message
+		return &evt, nil
 
 	case "content_block_start":
 		var evt ContentBlockStartEvent
 		if err := json.Unmarshal(data, &evt); err != nil {
-			return err
+			return nil, err
 		}
 		for len(r.message.Content) <= evt.Index {
 			r.message.Content = append(r.message.Content, ContentBlock{})
 		}
 		r.message.Content[evt.Index] = evt.ContentBlock
+		return &evt, nil
 
 	case "content_block_delta":
 		var evt ContentBlockDeltaEvent
 		if err := json.Unmarshal(data, &evt); err != nil {
-			return err
+			return nil, err
 		}
 		if evt.Index < len(r.message.Content) {
 			block := &r.message.Content[evt.Index]
@@ -501,31 +517,51 @@ func (r *StreamReader) processEvent(eventType string, data []byte) error {
 				block.Signature += evt.Delta.Signature
 			}
 		}
+		return &evt, nil
+
+	case "content_block_stop":
+		var evt ContentBlockStopEvent
+		if err := json.Unmarshal(data, &evt); err != nil {
+			return nil, err
+		}
+		return &evt, nil
 
 	case "message_delta":
 		var evt MessageDeltaEvent
 		if err := json.Unmarshal(data, &evt); err != nil {
-			return err
+			return nil, err
 		}
 		r.message.StopReason = evt.Delta.StopReason
 		r.message.StopSequence = evt.Delta.StopSequence
 		r.message.Usage.OutputTokens = evt.Usage.OutputTokens
+		return &evt, nil
+
+	case "message_stop":
+		var evt MessageStopEvent
+		if err := json.Unmarshal(data, &evt); err != nil {
+			return nil, err
+		}
+		return &evt, nil
+
+	case "ping":
+		var evt PingEvent
+		if err := json.Unmarshal(data, &evt); err != nil {
+			return nil, err
+		}
+		return &evt, nil
 
 	case "error":
 		var evt ErrorEvent
 		if err := json.Unmarshal(data, &evt); err != nil {
-			return err
+			return nil, err
 		}
 		logError("stream: server error", "error_type", evt.Error.Type, "message", evt.Error.Message)
-		return &APIError{
+		return nil, &APIError{
 			Type:   "error",
 			Detail: evt.Error,
 		}
-
-	case "ping", "content_block_stop", "message_stop":
-		// no-op
 	}
-	return nil
+	return nil, nil
 }
 
 // Message returns the accumulated message after streaming completes.
@@ -541,6 +577,54 @@ func (r *StreamReader) Err() error {
 // Close releases the underlying response body.
 func (r *StreamReader) Close() error {
 	return r.body.Close()
+}
+
+// Event returns the current SSE event from the last Next() call.
+// Use a type switch to handle specific event types:
+//
+//	for stream.Next() {
+//	    switch evt := stream.Event().(type) {
+//	    case *kraube.ContentBlockDeltaEvent:
+//	        fmt.Print(evt.Delta.Text)
+//	    case *kraube.ContentBlockStartEvent:
+//	        fmt.Println("Block:", evt.ContentBlock.Type)
+//	    }
+//	}
+//
+// Returns nil before the first Next() call or after the stream ends.
+func (r *StreamReader) Event() StreamEvent {
+	return r.currentEvent
+}
+
+// EventType returns the type string of the current event
+// (e.g. "content_block_delta", "message_start").
+// Returns "" if no current event.
+func (r *StreamReader) EventType() string {
+	if r.currentEvent == nil {
+		return ""
+	}
+	return r.currentEvent.EventType()
+}
+
+// CurrentBlock returns the content block associated with the current event,
+// reflecting accumulated state so far (e.g. tool_use with partial input).
+// Returns nil for events without a block (message_start, message_delta, ping).
+func (r *StreamReader) CurrentBlock() *ContentBlock {
+	var idx int
+	switch evt := r.currentEvent.(type) {
+	case *ContentBlockStartEvent:
+		idx = evt.Index
+	case *ContentBlockDeltaEvent:
+		idx = evt.Index
+	case *ContentBlockStopEvent:
+		idx = evt.Index
+	default:
+		return nil
+	}
+	if idx < len(r.message.Content) {
+		return &r.message.Content[idx]
+	}
+	return nil
 }
 
 // --- Error parsing ---

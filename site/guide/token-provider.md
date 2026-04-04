@@ -1,47 +1,35 @@
 # TokenProvider
 
-The `TokenProvider` interface is the single abstraction for authentication in Kraube API. The client calls `Token()` before each request.
+The `TokenProvider` interface is the single abstraction for authentication in Kraube API. The client calls `Token()` before each request to get a valid access token.
 
 ```go
 type TokenProvider interface {
-    Token(ctx context.Context) (*Credentials, error)
+    Token(ctx context.Context) (string, error)
 }
 ```
 
-## Built-in Providers
+## Built-in Options
 
-### WithCredentialsFile
+### WithTokenFile
 
-Loads credentials from a JSON file. Refreshed tokens are saved back.
+Loads the token from a file. Access tokens are obtained and refreshed automatically.
 
 ```go
-client, err := kraube.NewClient(ctx, kraube.WithCredentialsFile(""))
-// "" = default path: ~/.config/kraube/credentials.json
+client, err := kraube.NewClient(ctx, kraube.WithTokenFile(""))
+// "" = default path: ~/.config/kraube/token
 ```
 
-### WithAccessToken
+### WithToken
 
-Static token, no refresh. Use when you manage lifecycle externally.
-
-```go
-client, err := kraube.NewClient(ctx, kraube.WithAccessToken("eyJhbGci..."))
-```
-
-### WithCredentials
-
-Credentials struct with optional refresh token. Auto-refreshes when expired.
+Direct token. Access tokens are obtained and refreshed automatically.
 
 ```go
-client, err := kraube.NewClient(ctx, kraube.WithCredentials(&kraube.Credentials{
-    AccessToken:  "eyJhbGci...",
-    RefreshToken: "dGhpcyBp...",
-    ExpiresAt:    1712345678000, // unix ms
-}))
+client, err := kraube.NewClient(ctx, kraube.WithToken("dGhpcyBp..."))
 ```
 
 ### WithEnvToken
 
-Reads access token from an environment variable on each call.
+Reads the token from an environment variable.
 
 ```go
 client, err := kraube.NewClient(ctx, kraube.WithEnvToken("KRAUBE_TOKEN"))
@@ -63,25 +51,20 @@ type VaultProvider struct {
     path   string
 }
 
-func (v *VaultProvider) Token(ctx context.Context) (*kraube.Credentials, error) {
+func (v *VaultProvider) Token(ctx context.Context) (string, error) {
     secret, err := v.client.KVv2("secret").Get(ctx, v.path)
     if err != nil {
-        return nil, err
+        return "", err
     }
-    return &kraube.Credentials{
-        AccessToken:  secret.Data["access_token"].(string),
-        RefreshToken: secret.Data["refresh_token"].(string),
-        ExpiresAt:    secret.Data["expires_at"].(int64),
-    }, nil
+    return secret.Data["token"].(string), nil
 }
 ```
 
 ## Provider Comparison
 
-| Option | Provider | Auto-refresh | Persistence |
-|--------|----------|:---:|:---:|
-| `WithCredentialsFile(path)` | `FileTokenProvider` | Yes | Saves to disk |
-| `WithAccessToken(token)` | `StaticTokenProvider` | No | None |
-| `WithCredentials(creds)` | `CredentialsProvider` | Yes | In-memory only |
-| `WithEnvToken(envVar)` | `EnvTokenProvider` | No | Reads env each call |
-| `WithTokenProvider(p)` | Custom | Up to you | Up to you |
+| Option | Auto-refresh | Persistence |
+|--------|:---:|:---:|
+| `WithTokenFile(path)` | Yes | Saves rotated tokens to disk |
+| `WithToken(token)` | Yes | In-memory only |
+| `WithEnvToken(envVar)` | Yes | Reads env, manages access in-memory |
+| `WithTokenProvider(p)` | Up to you | Up to you |

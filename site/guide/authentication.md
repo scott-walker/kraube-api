@@ -16,31 +16,25 @@ This performs an OAuth Authorization Code flow with PKCE:
 2. Opens browser to `https://claude.com/cai/oauth/authorize`
 3. User authorizes in browser
 4. Callback receives authorization code
-5. Exchanges code for access + refresh tokens
-6. Saves credentials to `~/.config/kraube/credentials.json`
+5. Exchanges code for tokens
+6. Saves token to `~/.config/kraube/token`
 
-## Credentials Format
+## Token
 
-```json
-{
-  "access_token": "eyJhbGci...",
-  "refresh_token": "dGhpcyBp...",
-  "expires_at": 1712345678000
-}
-```
+After login, the token is stored as a plain string in `~/.config/kraube/token` with `0600` permissions.
 
-`expires_at` is a Unix timestamp in **milliseconds**.
+The token is all you need — short-lived access tokens are obtained and refreshed automatically under the hood.
 
 ## Auto-refresh
 
-Providers with a refresh token automatically refresh when the access token expires (60-second buffer). `FileTokenProvider` saves refreshed credentials back to disk.
+All built-in providers automatically obtain and refresh access tokens when needed. Access tokens live only in memory and are never written to disk.
 
 ## Headless Login
 
 For SSH or headless environments, `LoginManual` prints the URL and waits for the user to paste the code:
 
 ```go
-creds, err := kraube.LoginManual(ctx, func(authURL string) (string, error) {
+token, err := kraube.LoginManual(ctx, func(authURL string) (string, error) {
     fmt.Println("Open:", authURL)
     fmt.Print("Paste code: ")
     // read from stdin...

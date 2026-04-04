@@ -24,21 +24,14 @@ kraube usage
 ```go
 ctx := context.Background()
 
-// Из сохранённых credentials (по умолчанию ~/.config/kraube/credentials.json)
-client, err := kraube.NewClient(ctx, kraube.WithCredentialsFile(""))
+// Из сохранённого токена (по умолчанию ~/.config/kraube/token)
+client, err := kraube.NewClient(ctx, kraube.WithTokenFile(""))
 
-// Из access token напрямую
-client, err := kraube.NewClient(ctx, kraube.WithAccessToken(token))
+// Из токена напрямую
+client, err := kraube.NewClient(ctx, kraube.WithToken(token))
 
 // Из env variable
 client, err := kraube.NewClient(ctx, kraube.WithEnvToken("KRAUBE_TOKEN"))
-
-// Из готовых credentials (с авто-рефрешем)
-client, err := kraube.NewClient(ctx, kraube.WithCredentials(&kraube.Credentials{
-    AccessToken:  "...",
-    RefreshToken: "...",
-    ExpiresAt:    1712345678000,
-}))
 
 // Свой провайдер
 client, err := kraube.NewClient(ctx, kraube.WithTokenProvider(myProvider))
@@ -48,7 +41,7 @@ client, err := kraube.NewClient(ctx, kraube.WithTokenProvider(myProvider))
 
 ```go
 client, err := kraube.NewClient(ctx,
-    kraube.WithAccessToken(token),
+    kraube.WithToken(token),
     kraube.WithHTTPClient(&http.Client{Timeout: 30 * time.Second}),
     kraube.WithBaseURL("https://custom.endpoint"),
     kraube.WithoutProfile(), // пропустить загрузку профиля
@@ -60,16 +53,12 @@ client, err := kraube.NewClient(ctx,
 ```go
 type VaultProvider struct { /* ... */ }
 
-func (v *VaultProvider) Token(ctx context.Context) (*kraube.Credentials, error) {
+func (v *VaultProvider) Token(ctx context.Context) (string, error) {
     secret, err := v.vault.Read(ctx, "secret/kraube")
     if err != nil {
-        return nil, err
+        return "", err
     }
-    return &kraube.Credentials{
-        AccessToken:  secret["access_token"],
-        RefreshToken: secret["refresh_token"],
-        ExpiresAt:    secret["expires_at"],
-    }, nil
+    return secret["token"], nil
 }
 
 client, err := kraube.NewClient(ctx, kraube.WithTokenProvider(&VaultProvider{...}))
@@ -106,15 +95,47 @@ if err != nil {
 }
 defer stream.Close()
 
+// Real-time текст посимвольно
 for stream.Next() {
-    // Поток событий — финальное сообщение собирается автоматически
+    if evt, ok := stream.Event().(*kraube.ContentBlockDeltaEvent); ok {
+        if evt.Delta.Type == "text_delta" {
+            fmt.Print(evt.Delta.Text)
+        }
+    }
 }
 if err := stream.Err(); err != nil {
     log.Fatal(err)
 }
+fmt.Println()
 
+// Или просто финальное сообщение
 msg := stream.Message()
 fmt.Println(msg.Text())
+```
+
+### Real-time events
+
+Каждый `Next()` делает текущее SSE-событие доступным через `Event()`:
+
+```go
+for stream.Next() {
+    switch evt := stream.Event().(type) {
+    case *kraube.ContentBlockStartEvent:
+        if evt.ContentBlock.Type == "tool_use" {
+            fmt.Printf("Вызов: %s\n", evt.ContentBlock.Name)
+        }
+    case *kraube.ContentBlockDeltaEvent:
+        if evt.Delta.Type == "text_delta" {
+            fmt.Print(evt.Delta.Text)
+        }
+    case *kraube.ContentBlockStopEvent:
+        if b := stream.CurrentBlock(); b != nil && b.Type == "tool_use" {
+            fmt.Printf("Input: %s\n", string(b.Input))
+        }
+    case *kraube.MessageDeltaEvent:
+        fmt.Printf("\n[%s, %d tokens]\n", evt.Delta.StopReason, evt.Usage.OutputTokens)
+    }
+}
 ```
 
 ## System prompt
@@ -282,7 +303,7 @@ if err != nil {
         case apiErr.IsOverloaded():
             // Сервер перегружен
         case apiErr.IsAuthentication():
-            // Невалидные credentials
+            // Невалидный токен
         default:
             log.Fatal(apiErr.Detail.Message)
         }

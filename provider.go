@@ -8,134 +8,114 @@ import (
 	"time"
 )
 
-// TokenProvider abstracts how credentials are obtained.
-// The client calls Token() before each request to get valid credentials.
+// TokenProvider abstracts how access tokens are obtained.
+// The client calls Token() before each request to get a valid access token string.
 type TokenProvider interface {
-	// Token returns current valid credentials.
+	// Token returns a valid access token ready for use in API requests.
 	// Implementations should handle refreshing internally if needed.
-	Token(ctx context.Context) (*Credentials, error)
+	Token(ctx context.Context) (string, error)
 }
 
 // --- Built-in providers ---
 
-// StaticTokenProvider returns a fixed access token that never refreshes.
-// Use this when you have a token from an external source and manage
-// its lifecycle yourself.
-type StaticTokenProvider struct {
-	creds *Credentials
+// tokenManager manages the OAuth access token lifecycle from a stored token.
+// It holds the token (refresh token) and obtains short-lived access tokens
+// automatically, refreshing them when they expire.
+type tokenManager struct {
+	mu           sync.Mutex
+	refreshToken string
+	accessToken  string
+	expiresAt    int64                    // unix ms
+	saveFn       func(token string) error // optional: persist rotated refresh token
 }
 
-// NewStaticTokenProvider creates a provider from a raw access token.
-// The token has no expiry and will not be refreshed.
-func NewStaticTokenProvider(accessToken string) *StaticTokenProvider {
-	return &StaticTokenProvider{
-		creds: &Credentials{
-			AccessToken: accessToken,
-			ExpiresAt:   time.Now().Add(365 * 24 * time.Hour).UnixMilli(), // far future
-		},
-	}
+func newTokenManager(token string) *tokenManager {
+	return &tokenManager{refreshToken: token}
 }
 
-func (p *StaticTokenProvider) Token(_ context.Context) (*Credentials, error) {
-	return p.creds, nil
-}
+func (m *tokenManager) Token(ctx context.Context) (string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 
-// CredentialsProvider returns fixed credentials and auto-refreshes when expired.
-type CredentialsProvider struct {
-	mu    sync.Mutex
-	creds *Credentials
-	path  string // optional: save refreshed creds to disk
-}
-
-// NewCredentialsProvider creates a provider from existing credentials.
-// If the credentials contain a refresh token, they will be auto-refreshed
-// when expired.
-func NewCredentialsProvider(creds *Credentials) *CredentialsProvider {
-	return &CredentialsProvider{creds: creds}
-}
-
-func (p *CredentialsProvider) Token(ctx context.Context) (*Credentials, error) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	if !p.creds.IsExpired() {
-		return p.creds, nil
+	if m.accessToken != "" && !m.isExpired() {
+		return m.accessToken, nil
 	}
 
-	if p.creds.RefreshToken == "" {
-		return nil, fmt.Errorf("token expired and no refresh token available")
-	}
-
-	logDebug("provider: token expired, refreshing")
-	newCreds, err := RefreshAccessToken(ctx, p.creds)
+	logDebug("provider: access token expired or missing, refreshing")
+	tokens, err := refreshAccessToken(ctx, m.refreshToken)
 	if err != nil {
-		return nil, fmt.Errorf("refresh token: %w", err)
+		return "", fmt.Errorf("refresh token: %w", err)
 	}
-	p.creds = newCreds
 
-	if p.path != "" {
-		if err := SaveCredentials(p.path, newCreds); err != nil {
-			logWarn("provider: failed to save refreshed credentials", "path", p.path, "error", err)
+	m.accessToken = tokens.accessToken
+	m.expiresAt = tokens.expiresAt
+
+	// Handle refresh token rotation.
+	if tokens.refreshToken != "" && tokens.refreshToken != m.refreshToken {
+		m.refreshToken = tokens.refreshToken
+		if m.saveFn != nil {
+			if err := m.saveFn(m.refreshToken); err != nil {
+				logWarn("provider: failed to save rotated token", "error", err)
+			}
 		}
 	}
 
-	return p.creds, nil
+	return m.accessToken, nil
 }
 
-// FileTokenProvider loads credentials from a JSON file and auto-refreshes.
-type FileTokenProvider struct {
-	inner *CredentialsProvider
+func (m *tokenManager) isExpired() bool {
+	return m.accessToken == "" || timeNowMs() >= m.expiresAt-60_000
 }
 
-// NewFileTokenProvider creates a provider that reads credentials from path.
-// Refreshed tokens are saved back to the same file.
-func NewFileTokenProvider(path string) (*FileTokenProvider, error) {
-	creds, err := LoadCredentials(path)
-	if err != nil {
-		return nil, fmt.Errorf("load credentials from %s: %w", path, err)
-	}
-	p := &CredentialsProvider{creds: creds, path: path}
-	return &FileTokenProvider{inner: p}, nil
-}
-
-func (p *FileTokenProvider) Token(ctx context.Context) (*Credentials, error) {
-	return p.inner.Token(ctx)
-}
-
-// EnvTokenProvider reads the access token from an environment variable.
-type EnvTokenProvider struct {
+// envTokenManager reads the token from an environment variable and delegates
+// to a tokenManager for access token lifecycle.
+type envTokenManager struct {
+	mu     sync.Mutex
 	envVar string
+	token  string // last seen token value
+	inner  *tokenManager
 }
 
-// NewEnvTokenProvider creates a provider that reads from the given env var.
-// The env var is read on each call to Token(), so changes are picked up.
-func NewEnvTokenProvider(envVar string) *EnvTokenProvider {
-	return &EnvTokenProvider{envVar: envVar}
+func newEnvTokenManager(envVar string) *envTokenManager {
+	return &envTokenManager{envVar: envVar}
 }
 
-func (p *EnvTokenProvider) Token(_ context.Context) (*Credentials, error) {
-	token := os.Getenv(p.envVar)
+func (m *envTokenManager) Token(ctx context.Context) (string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	token := os.Getenv(m.envVar)
 	if token == "" {
-		return nil, fmt.Errorf("environment variable %s is not set", p.envVar)
+		return "", fmt.Errorf("environment variable %s is not set", m.envVar)
 	}
-	return &Credentials{
-		AccessToken: token,
-		ExpiresAt:   time.Now().Add(365 * 24 * time.Hour).UnixMilli(),
-	}, nil
+
+	// If token changed, create new inner manager.
+	if m.inner == nil || token != m.token {
+		m.token = token
+		m.inner = newTokenManager(token)
+	}
+
+	return m.inner.Token(ctx)
 }
 
 // CallbackTokenProvider wraps a user-supplied function as a TokenProvider.
+// The function should return a valid access token string.
 type CallbackTokenProvider struct {
-	fn func(ctx context.Context) (*Credentials, error)
+	fn func(ctx context.Context) (string, error)
 }
 
 // NewCallbackTokenProvider creates a provider from a callback function.
 // The function is called on each Token() invocation — the caller is responsible
 // for caching/refreshing as needed.
-func NewCallbackTokenProvider(fn func(ctx context.Context) (*Credentials, error)) *CallbackTokenProvider {
+func NewCallbackTokenProvider(fn func(ctx context.Context) (string, error)) *CallbackTokenProvider {
 	return &CallbackTokenProvider{fn: fn}
 }
 
-func (p *CallbackTokenProvider) Token(ctx context.Context) (*Credentials, error) {
+func (p *CallbackTokenProvider) Token(ctx context.Context) (string, error) {
 	return p.fn(ctx)
+}
+
+// timeNowMs returns the current time in unix milliseconds.
+func timeNowMs() int64 {
+	return time.Now().UnixMilli()
 }

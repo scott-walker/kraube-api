@@ -15,7 +15,7 @@ go build -o kraube ./cmd/kraube/
 kraube login
 ```
 
-This opens your browser for OAuth authorization with claude.ai. After confirming, credentials are saved to `~/.config/kraube/credentials.json`.
+This opens your browser for OAuth authorization with claude.ai. After confirming, your token is saved to `~/.config/kraube/token`.
 
 ## First request
 
@@ -33,7 +33,7 @@ import (
 func main() {
     ctx := context.Background()
 
-    client, err := kraube.NewClient(ctx, kraube.WithCredentialsFile(""))
+    client, err := kraube.NewClient(ctx, kraube.WithTokenFile(""))
     if err != nil {
         log.Fatal(err)
     }
@@ -53,11 +53,11 @@ func main() {
 
 ## Other token sources
 
-You don't have to use a credentials file. See [TokenProvider](./token-provider) for all options:
+You don't have to use a token file. See [TokenProvider](./token-provider) for all options:
 
 ```go
-// Static token
-client, _ := kraube.NewClient(ctx, kraube.WithAccessToken("eyJ..."))
+// Direct token
+client, _ := kraube.NewClient(ctx, kraube.WithToken("eyJ..."))
 
 // Environment variable
 client, _ := kraube.NewClient(ctx, kraube.WithEnvToken("KRAUBE_TOKEN"))

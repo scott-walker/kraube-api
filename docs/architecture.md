@@ -17,16 +17,14 @@
 │  └── Messages.CountTokens()     │  ← подсчёт токенов
 ├─────────────────────────────────┤
 │  TokenProvider                  │  ← интерфейс: откуда токен
-│  ├── StaticTokenProvider        │  ← фиксированный access token
-│  ├── CredentialsProvider        │  ← credentials + авто-рефреш
-│  ├── FileTokenProvider          │  ← JSON файл + рефреш на диск
-│  ├── EnvTokenProvider           │  ← из env variable
+│  ├── tokenManager               │  ← авто-рефреш access token
+│  ├── envTokenManager            │  ← из env variable
 │  └── CallbackTokenProvider      │  ← произвольная функция
 ├─────────────────────────────────┤
 │  Auth (auth.go)                 │  ← OAuth PKCE + token refresh
-│  ├── Login()                    │  ← browser → code → tokens
+│  ├── Login()                    │  ← browser → code → token
 │  ├── LoginManual()              │  ← headless login
-│  └── RefreshAccessToken()       │  ← рефреш токена
+│  └── refreshAccessToken()       │  ← рефреш access token
 ├─────────────────────────────────┤
 │  HTTP transport                 │  ← JSON → HTTP → JSON
 │  ├── billing header injection   │  ← обязателен для подписки
@@ -45,10 +43,10 @@
 
 ```go
 // Из файла
-client, err := kraube.NewClient(ctx, kraube.WithCredentialsFile(""))
+client, err := kraube.NewClient(ctx, kraube.WithTokenFile(""))
 
-// Статичный токен
-client, err := kraube.NewClient(ctx, kraube.WithAccessToken(token))
+// Из токена напрямую
+client, err := kraube.NewClient(ctx, kraube.WithToken(token))
 
 // Env variable
 client, err := kraube.NewClient(ctx, kraube.WithEnvToken("KRAUBE_TOKEN"))
@@ -58,7 +56,7 @@ client, err := kraube.NewClient(ctx, kraube.WithTokenProvider(myProvider))
 
 // С опциями
 client, err := kraube.NewClient(ctx,
-    kraube.WithAccessToken(token),
+    kraube.WithToken(token),
     kraube.WithBaseURL("https://custom.endpoint"),
     kraube.WithHTTPClient(customHTTP),
     kraube.WithoutProfile(),
@@ -74,7 +72,7 @@ client, err := kraube.NewClient(ctx,
 | `types.go` | Типы данных API: Message, ContentBlock, Tool, Schema и т.д. |
 | `request.go` | Request/Response структуры, APIError, streaming events |
 | `client.go` | HTTP-клиент, MessagesService, StreamReader |
-| `auth.go` | OAuth PKCE flow, token refresh, credentials persistence |
+| `auth.go` | OAuth PKCE flow, token refresh, token persistence |
 | `provider.go` | TokenProvider интерфейс и встроенные реализации |
 | `options.go` | Functional options для NewClient |
 | `transport.go` | Chrome TLS fingerprint (uTLS) |

@@ -26,45 +26,36 @@ type clientConfig struct {
 
 // WithTokenProvider sets a custom TokenProvider.
 // This is the most flexible option — implement the TokenProvider interface
-// to supply credentials from any source.
+// to supply access tokens from any source.
 func WithTokenProvider(p TokenProvider) Option {
 	return func(c *clientConfig) {
 		c.provider = p
 	}
 }
 
-// WithAccessToken creates a client with a static OAuth access token.
-// The token will not be refreshed — use this when you manage token lifecycle externally.
-func WithAccessToken(token string) Option {
+// WithToken creates a client with the given token.
+// The token is obtained from `kraube login` and handles authentication automatically.
+func WithToken(token string) Option {
 	return func(c *clientConfig) {
-		c.provider = NewStaticTokenProvider(token)
+		c.provider = newTokenManager(token)
 	}
 }
 
-// WithCredentials creates a client from existing OAuth credentials.
-// If the credentials include a refresh token, they will be auto-refreshed.
-func WithCredentials(creds *Credentials) Option {
-	return func(c *clientConfig) {
-		c.provider = NewCredentialsProvider(creds)
-	}
-}
-
-// WithCredentialsFile loads OAuth credentials from a JSON file.
-// Refreshed tokens are saved back to the same file.
-// Pass "" to use the default path (~/.config/kraube/credentials.json).
-func WithCredentialsFile(path string) Option {
+// WithTokenFile loads the token from a file.
+// Pass "" to use the default path (~/.config/kraube/token).
+func WithTokenFile(path string) Option {
 	return func(c *clientConfig) {
 		if path == "" {
-			path = DefaultCredentialsPath()
+			path = DefaultTokenPath()
 		}
 		c.provider = &deferredFileProvider{path: path}
 	}
 }
 
-// WithEnvToken reads the OAuth access token from the given environment variable.
+// WithEnvToken reads the token from the given environment variable.
 func WithEnvToken(envVar string) Option {
 	return func(c *clientConfig) {
-		c.provider = NewEnvTokenProvider(envVar)
+		c.provider = newEnvTokenManager(envVar)
 	}
 }
 
@@ -101,6 +92,6 @@ type deferredFileProvider struct {
 	path string
 }
 
-func (p *deferredFileProvider) Token(_ context.Context) (*Credentials, error) {
+func (p *deferredFileProvider) Token(_ context.Context) (string, error) {
 	panic("deferredFileProvider.Token should not be called directly")
 }

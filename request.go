@@ -1,7 +1,5 @@
 package kraube
 
-import "encoding/json"
-
 // MessageRequest is the request body for POST /v1/messages.
 type MessageRequest struct {
 	Model         Model          `json:"model"`
@@ -119,10 +117,10 @@ func (e *APIError) IsOverloaded() bool     { return e.Detail.Type == "overloaded
 
 // --- Streaming Events ---
 
-// StreamEvent represents a single SSE event from the streaming API.
-type StreamEvent struct {
-	Type string // SSE event type
-	Data json.RawMessage
+// StreamEvent is the interface satisfied by all typed SSE events.
+// Use a type switch to handle specific event types in the streaming loop.
+type StreamEvent interface {
+	EventType() string
 }
 
 // Typed event payloads:
@@ -132,11 +130,15 @@ type MessageStartEvent struct {
 	Message MessageResponse `json:"message"`
 }
 
+func (*MessageStartEvent) EventType() string { return "message_start" }
+
 type ContentBlockStartEvent struct {
 	Type         string       `json:"type"` // "content_block_start"
 	Index        int          `json:"index"`
 	ContentBlock ContentBlock `json:"content_block"`
 }
+
+func (*ContentBlockStartEvent) EventType() string { return "content_block_start" }
 
 type ContentBlockDeltaEvent struct {
 	Type  string `json:"type"` // "content_block_delta"
@@ -144,10 +146,14 @@ type ContentBlockDeltaEvent struct {
 	Delta Delta  `json:"delta"`
 }
 
+func (*ContentBlockDeltaEvent) EventType() string { return "content_block_delta" }
+
 type ContentBlockStopEvent struct {
 	Type  string `json:"type"` // "content_block_stop"
 	Index int    `json:"index"`
 }
+
+func (*ContentBlockStopEvent) EventType() string { return "content_block_stop" }
 
 type MessageDeltaEvent struct {
 	Type  string     `json:"type"` // "message_delta"
@@ -155,9 +161,13 @@ type MessageDeltaEvent struct {
 	Usage Usage      `json:"usage"`
 }
 
+func (*MessageDeltaEvent) EventType() string { return "message_delta" }
+
 type MessageStopEvent struct {
 	Type string `json:"type"` // "message_stop"
 }
+
+func (*MessageStopEvent) EventType() string { return "message_stop" }
 
 // Delta is the incremental content in a content_block_delta.
 type Delta struct {
@@ -179,8 +189,12 @@ type PingEvent struct {
 	Type string `json:"type"` // "ping"
 }
 
+func (*PingEvent) EventType() string { return "ping" }
+
 // ErrorEvent is an error during streaming.
 type ErrorEvent struct {
 	Type  string         `json:"type"` // "error"
 	Error APIErrorDetail `json:"error"`
 }
+
+func (*ErrorEvent) EventType() string { return "error" }

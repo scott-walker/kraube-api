@@ -16,7 +16,7 @@ OAuth flow идёт на **claude.ai** (подписка), а не на platform
 
 ```go
 type TokenProvider interface {
-    Token(ctx context.Context) (*Credentials, error)
+    Token(ctx context.Context) (string, error)
 }
 ```
 
@@ -26,21 +26,13 @@ type TokenProvider interface {
 
 Если поведение не описано в официальной документации Anthropic API — **источник истины это бинарник Claude Code CLI** (`~/.local/share/claude/versions/`). Парсим, смотрим эндпоинты, параметры, протоколы — и реплицируем.
 
-## Формат credentials
+## Токен
 
-```json
-{
-  "access_token": "...",
-  "refresh_token": "...",
-  "expires_at": 1712345678000
-}
-```
-
-Для `WithCredentialsFile` хранится в `~/.config/kraube/credentials.json` (XDG-совместимо, права `0600`).
+После `kraube login` токен хранится в `~/.config/kraube/token` (XDG-совместимо, права `0600`). Это единственное, что нужно для аутентификации — access token'ы получаются и обновляются автоматически.
 
 ## Auto-refresh
 
-`CredentialsProvider` и `FileTokenProvider` автоматически рефрешат токен, если до истечения осталось менее 60 секунд. `FileTokenProvider` сохраняет обновлённые credentials обратно на диск.
+Все встроенные провайдеры автоматически получают access token и рефрешат его за 60 секунд до истечения. Access token живёт только в памяти и никогда не записывается на диск.
 
 ## Минимум зависимостей
 

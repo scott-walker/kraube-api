@@ -27,40 +27,41 @@ const (
 	oauthBeta           = "oauth-2025-04-20"
 )
 
-// Credentials holds OAuth tokens for Anthropic API access.
-type Credentials struct {
-	AccessToken  string `json:"access_token"`
-	RefreshToken string `json:"refresh_token"`
-	ExpiresAt    int64  `json:"expires_at"` // unix ms
+// oauthTokens is the internal representation of an OAuth token pair.
+// Access tokens are short-lived (~1 hour) and managed in memory.
+// Refresh tokens are long-lived and persisted to disk.
+type oauthTokens struct {
+	accessToken  string
+	refreshToken string
+	expiresAt    int64 // unix ms
 }
 
-// IsExpired returns true if the token has expired or expires within 60 seconds.
-func (c *Credentials) IsExpired() bool {
-	return time.Now().UnixMilli() >= c.ExpiresAt-60_000
+func (t *oauthTokens) isExpired() bool {
+	return t.accessToken == "" || time.Now().UnixMilli() >= t.expiresAt-60_000
 }
 
 // Login performs the full OAuth authorization_code flow with PKCE.
 // It opens the browser and waits for the callback.
-// Returns credentials on success.
-func Login(ctx context.Context, openBrowser func(url string) error) (*Credentials, error) {
+// Returns the token for storage on success.
+func Login(ctx context.Context, openBrowser func(url string) error) (string, error) {
 	logInfo("oauth: starting login flow")
 
 	// Generate PKCE
 	verifier, challenge, err := generatePKCE()
 	if err != nil {
-		return nil, fmt.Errorf("generate PKCE: %w", err)
+		return "", fmt.Errorf("generate PKCE: %w", err)
 	}
 	logDebug("oauth: PKCE generated", "challenge_len", len(challenge), "verifier_len", len(verifier))
 
 	state, err := randomString(32)
 	if err != nil {
-		return nil, fmt.Errorf("generate state: %w", err)
+		return "", fmt.Errorf("generate state: %w", err)
 	}
 
 	// Start local server to receive callback
 	listener, err := net.Listen("tcp", "localhost:0")
 	if err != nil {
-		return nil, fmt.Errorf("listen: %w", err)
+		return "", fmt.Errorf("listen: %w", err)
 	}
 	defer listener.Close()
 
@@ -121,7 +122,7 @@ func Login(ctx context.Context, openBrowser func(url string) error) (*Credential
 	// Open browser
 	logDebug("oauth: opening browser")
 	if err := openBrowser(authURL); err != nil {
-		return nil, fmt.Errorf("open browser: %w", err)
+		return "", fmt.Errorf("open browser: %w", err)
 	}
 	logDebug("oauth: browser opened, waiting for callback...")
 
@@ -131,19 +132,19 @@ func Login(ctx context.Context, openBrowser func(url string) error) (*Credential
 	case code = <-codeCh:
 		logDebug("oauth: code received, exchanging for tokens")
 	case err := <-errCh:
-		return nil, err
+		return "", err
 	case <-ctx.Done():
 		logWarn("oauth: login cancelled by context")
-		return nil, ctx.Err()
+		return "", ctx.Err()
 	}
 
 	// Exchange code for tokens
-	creds, err := exchangeCode(ctx, code, verifier, redirectURI, state)
+	tokens, err := exchangeCode(ctx, code, verifier, redirectURI, state)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
-	logInfo("oauth: login successful", "expires_at", creds.ExpiresAt)
-	return creds, nil
+	logInfo("oauth: login successful")
+	return tokens.refreshToken, nil
 }
 
 // LoginManual performs OAuth login without a local callback server.
@@ -151,17 +152,17 @@ func Login(ctx context.Context, openBrowser func(url string) error) (*Credential
 // Ideal for headless/SSH environments.
 //
 // The readCode function should prompt the user and return the pasted code.
-func LoginManual(ctx context.Context, readCode func(authURL string) (string, error)) (*Credentials, error) {
+func LoginManual(ctx context.Context, readCode func(authURL string) (string, error)) (string, error) {
 	logInfo("oauth: starting manual login flow")
 
 	verifier, challenge, err := generatePKCE()
 	if err != nil {
-		return nil, fmt.Errorf("generate PKCE: %w", err)
+		return "", fmt.Errorf("generate PKCE: %w", err)
 	}
 
 	state, err := randomString(32)
 	if err != nil {
-		return nil, fmt.Errorf("generate state: %w", err)
+		return "", fmt.Errorf("generate state: %w", err)
 	}
 
 	params := url.Values{
@@ -179,29 +180,29 @@ func LoginManual(ctx context.Context, readCode func(authURL string) (string, err
 
 	raw, err := readCode(authURL)
 	if err != nil {
-		return nil, fmt.Errorf("read code: %w", err)
+		return "", fmt.Errorf("read code: %w", err)
 	}
 	code := extractAuthCode(strings.TrimSpace(raw))
 	if code == "" {
-		return nil, fmt.Errorf("could not extract authorization code from input")
+		return "", fmt.Errorf("could not extract authorization code from input")
 	}
 	logDebug("oauth: manual code extracted", "code_len", len(code))
 
-	creds, err := exchangeCode(ctx, code, verifier, oauthManualRedirect, state)
+	tokens, err := exchangeCode(ctx, code, verifier, oauthManualRedirect, state)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
-	logInfo("oauth: manual login successful", "expires_at", creds.ExpiresAt)
-	return creds, nil
+	logInfo("oauth: manual login successful")
+	return tokens.refreshToken, nil
 }
 
-// RefreshAccessToken refreshes an expired access token.
-func RefreshAccessToken(ctx context.Context, creds *Credentials) (*Credentials, error) {
+// refreshAccessToken exchanges a refresh token for a new access token.
+func refreshAccessToken(ctx context.Context, refreshToken string) (*oauthTokens, error) {
 	logDebug("oauth: refreshing access token", "token_url", oauthTokenURL)
 
 	body := map[string]string{
 		"grant_type":    "refresh_token",
-		"refresh_token": creds.RefreshToken,
+		"refresh_token": refreshToken,
 		"client_id":     oauthClientID,
 		"scope":         oauthScopes,
 	}
@@ -239,63 +240,58 @@ func RefreshAccessToken(ctx context.Context, creds *Credentials) (*Credentials, 
 		return nil, err
 	}
 
-	newCreds := &Credentials{
-		AccessToken:  result.AccessToken,
-		RefreshToken: result.RefreshToken,
-		ExpiresAt:    time.Now().UnixMilli() + int64(result.ExpiresIn)*1000,
+	tokens := &oauthTokens{
+		accessToken:  result.AccessToken,
+		refreshToken: result.RefreshToken,
+		expiresAt:    time.Now().UnixMilli() + int64(result.ExpiresIn)*1000,
 	}
-	if newCreds.RefreshToken == "" {
-		newCreds.RefreshToken = creds.RefreshToken
+	if tokens.refreshToken == "" {
+		tokens.refreshToken = refreshToken
 	}
-	logInfo("oauth: token refreshed", "expires_in", result.ExpiresIn, "new_expires_at", newCreds.ExpiresAt)
-	return newCreds, nil
+	logInfo("oauth: token refreshed", "expires_in", result.ExpiresIn)
+	return tokens, nil
 }
 
-// --- Credentials persistence ---
+// --- Token persistence ---
 
-// DefaultCredentialsPath returns ~/.config/kraube/credentials.json.
-func DefaultCredentialsPath() string {
+// DefaultTokenPath returns ~/.config/kraube/token.
+func DefaultTokenPath() string {
 	dir := os.Getenv("XDG_CONFIG_HOME")
 	if dir == "" {
 		home, _ := os.UserHomeDir()
 		dir = filepath.Join(home, ".config")
 	}
-	return filepath.Join(dir, "kraube", "credentials.json")
+	return filepath.Join(dir, "kraube", "token")
 }
 
-// SaveCredentials writes credentials to disk.
-func SaveCredentials(path string, creds *Credentials) error {
-	logDebug("credentials: saving", "path", path)
+// SaveToken writes a token to disk with restricted permissions.
+func SaveToken(path, token string) error {
+	logDebug("token: saving", "path", path)
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return err
 	}
-	data, err := json.MarshalIndent(creds, "", "  ")
-	if err != nil {
+	if err := os.WriteFile(path, []byte(token), 0600); err != nil {
 		return err
 	}
-	if err := os.WriteFile(path, data, 0600); err != nil {
-		return err
-	}
-	logDebug("credentials: saved", "path", path)
+	logDebug("token: saved", "path", path)
 	return nil
 }
 
-// LoadCredentials reads credentials from disk.
-func LoadCredentials(path string) (*Credentials, error) {
-	logDebug("credentials: loading", "path", path)
+// LoadToken reads a token from disk.
+func LoadToken(path string) (string, error) {
+	logDebug("token: loading", "path", path)
 	data, err := os.ReadFile(path)
 	if err != nil {
-		logDebug("credentials: file not found", "path", path, "error", err)
-		return nil, err
+		logDebug("token: file not found", "path", path, "error", err)
+		return "", err
 	}
-	var creds Credentials
-	if err := json.Unmarshal(data, &creds); err != nil {
-		logError("credentials: invalid JSON", "path", path, "error", err)
-		return nil, err
+	token := strings.TrimSpace(string(data))
+	if token == "" {
+		return "", fmt.Errorf("token file is empty: %s", path)
 	}
-	logDebug("credentials: loaded", "path", path, "expired", creds.IsExpired(), "expires_at", creds.ExpiresAt)
-	return &creds, nil
+	logDebug("token: loaded", "path", path)
+	return token, nil
 }
 
 // --- Token exchange ---
@@ -307,7 +303,7 @@ type tokenResponse struct {
 	TokenType    string `json:"token_type"`
 }
 
-func exchangeCode(ctx context.Context, code, verifier, redirectURI, state string) (*Credentials, error) {
+func exchangeCode(ctx context.Context, code, verifier, redirectURI, state string) (*oauthTokens, error) {
 	logDebug("oauth: exchanging code for tokens", "token_url", oauthTokenURL, "redirect_uri", redirectURI, "code_len", len(code))
 
 	body := map[string]string{
@@ -352,13 +348,13 @@ func exchangeCode(ctx context.Context, code, verifier, redirectURI, state string
 		return nil, err
 	}
 
-	creds := &Credentials{
-		AccessToken:  result.AccessToken,
-		RefreshToken: result.RefreshToken,
-		ExpiresAt:    time.Now().UnixMilli() + int64(result.ExpiresIn)*1000,
+	tokens := &oauthTokens{
+		accessToken:  result.AccessToken,
+		refreshToken: result.RefreshToken,
+		expiresAt:    time.Now().UnixMilli() + int64(result.ExpiresIn)*1000,
 	}
 	logInfo("oauth: tokens received", "expires_in", result.ExpiresIn, "elapsed", elapsed)
-	return creds, nil
+	return tokens, nil
 }
 
 // --- Profile ---

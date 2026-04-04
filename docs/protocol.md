@@ -252,7 +252,7 @@ x-app: cli
 
 ---
 
-## 10. Хранение credentials
+## 10. Хранение токенов
 
 Claude Code хранит OAuth-токены в `~/.claude/{profile}/.credentials.json`:
 
@@ -268,4 +268,4 @@ Claude Code хранит OAuth-токены в `~/.claude/{profile}/.credentials
 
 `expiresAt` — Unix timestamp в **миллисекундах**.
 
-Kraube API хранит свои credentials в `~/.config/kraube/credentials.json`.
+Kraube API хранит токен в `~/.config/kraube/token` (plain text, только refresh token).

@@ -5,7 +5,7 @@
 ### Added
 - Stateless `TokenProvider` interface for flexible authentication
 - Functional options pattern: `NewClient(ctx, ...Option)` as single entry point
-- Built-in providers: Static, Credentials, File, Env, Callback
+- Built-in providers: Token, TokenFile, EnvToken, Callback
 - `README.md` with full usage guide and brand assets
 - GitHub Actions CI/CD (lint, test, release)
 - GoReleaser configuration for cross-platform CLI builds

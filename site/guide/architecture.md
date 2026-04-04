@@ -3,30 +3,28 @@
 ## Layers
 
 ```
-┌─────────────────────────────────┐
+┌───���─────────────────────────────┐
 │  Your code / CLI                │
-├─────────────────────────────────┤
+├───────────────────────────────���─┤
 │  kraube.Client                  │  ← entry point
-│  ├── Messages.Create()          │  ← sync request
+│  ├── Messages.Create()          ���  ← sync request
 │  ├── Messages.Stream()          │  ← SSE streaming
 │  └── Messages.CountTokens()     │  ← token counting
 ├─────────────────────────────────┤
 │  TokenProvider                  │  ← where token comes from
-│  ├── StaticTokenProvider        │
-│  ├── CredentialsProvider        │
-│  ├── FileTokenProvider          │
-│  ├── EnvTokenProvider           │
-│  └── CallbackTokenProvider      │
-├─────────────────────────────────┤
+│  ├── tokenManager               │  ← auto-refresh access tokens
+│  ├── envTokenManager            │  ← from env variable
+│  └── CallbackTokenProvider      │  ← custom function
+���─────────────────────────���───────┤
 │  Auth (auth.go)                 │  ← OAuth PKCE + refresh
 ├─────────────────────────────────┤
 │  HTTP Transport                 │  ← billing header, metadata
 │  └── Chrome TLS (uTLS)         │  ← Cloudflare bypass
-├─────────────────────────────────┤
+├─────────────────────────────���───┤
 │  Types (types.go, request.go)   │  ← full API type coverage
-├─────────────────────────────────┤
+├───────────────────────���─────────┤
 │  net/http + encoding/json       │  ← stdlib
-└─────────────────────────────────┘
+└──────���──────────────────────────��
 ```
 
 ## File Organization
@@ -36,7 +34,7 @@
 | `client.go` | Client struct, NewClient, HTTP transport, StreamReader |
 | `provider.go` | TokenProvider interface and built-in implementations |
 | `options.go` | Functional options for NewClient |
-| `auth.go` | OAuth PKCE flow, token refresh, credentials persistence |
+| `auth.go` | OAuth PKCE flow, token refresh, token persistence |
 | `types.go` | API data types: Message, ContentBlock, Tool, Schema |
 | `request.go` | Request/Response structs, APIError, streaming events |
 | `models.go` | Model constants |

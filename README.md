@@ -43,14 +43,14 @@ go build -o kraube ./cmd/kraube/
 kraube login
 ```
 
-Opens browser for OAuth, saves credentials to `~/.config/kraube/credentials.json`.
+Opens browser for OAuth, saves token to `~/.config/kraube/token`.
 
 ### Use
 
 ```go
 ctx := context.Background()
 
-client, err := kraube.NewClient(ctx, kraube.WithCredentialsFile(""))
+client, err := kraube.NewClient(ctx, kraube.WithTokenFile(""))
 if err != nil {
     log.Fatal(err)
 }
@@ -69,26 +69,25 @@ Single interface for authentication. Token can come from anywhere:
 
 ```go
 type TokenProvider interface {
-    Token(ctx context.Context) (*Credentials, error)
+    Token(ctx context.Context) (string, error)
 }
 ```
 
-Built-in providers:
+Built-in options:
 
 | Option | Description | Auto-refresh |
 |--------|-------------|:---:|
-| `WithCredentialsFile(path)` | JSON file, refreshes back to disk | Yes |
-| `WithAccessToken(token)` | Static token, no refresh | No |
-| `WithCredentials(creds)` | Credentials struct with refresh_token | Yes |
-| `WithEnvToken(envVar)` | Environment variable | No |
+| `WithTokenFile(path)` | File, refreshes automatically | Yes |
+| `WithToken(token)` | Direct token | Yes |
+| `WithEnvToken(envVar)` | Environment variable | Yes |
 | `WithTokenProvider(p)` | Any custom implementation | Up to you |
 
 ```go
 // From file (after kraube login)
-client, _ := kraube.NewClient(ctx, kraube.WithCredentialsFile(""))
+client, _ := kraube.NewClient(ctx, kraube.WithTokenFile(""))
 
-// Static token
-client, _ := kraube.NewClient(ctx, kraube.WithAccessToken(os.Getenv("MY_TOKEN")))
+// Direct token
+client, _ := kraube.NewClient(ctx, kraube.WithToken(os.Getenv("MY_TOKEN")))
 
 // Custom provider (Vault, Redis, DB...)
 client, _ := kraube.NewClient(ctx, kraube.WithTokenProvider(myVaultProvider))
@@ -106,8 +105,19 @@ stream, err := client.Messages.Stream(ctx, &kraube.MessageRequest{
 })
 defer stream.Close()
 
-for stream.Next() {}
-fmt.Println(stream.Message().Text())
+for stream.Next() {
+    switch evt := stream.Event().(type) {
+    case *kraube.ContentBlockStartEvent:
+        if evt.ContentBlock.Type == "tool_use" {
+            fmt.Printf("Tool: %s\n", evt.ContentBlock.Name)
+        }
+    case *kraube.ContentBlockDeltaEvent:
+        if evt.Delta.Type == "text_delta" {
+            fmt.Print(evt.Delta.Text) // real-time text
+        }
+    }
+}
+fmt.Println()
 ```
 
 ### System Prompt
@@ -214,7 +224,7 @@ if err != nil {
 ```
 Your code ──▶ kraube.Client
                   │
-          ┌───────┴───────┐
+          ┌───────┴──��────┐
           ▼               ▼
     TokenProvider     HTTP Transport
     (any source)      (Chrome TLS)
@@ -241,7 +251,7 @@ kraube --debug "prompt"       # debug logging
 ## Documentation
 
 - [Usage Examples](docs/usage.md) — full code examples
-- [Architecture](docs/architecture.md) — project structure
+- [Architecture](docs/architecture.md) �� project structure
 - [Principles](docs/principles.md) — design decisions
 - [Protocol](docs/protocol.md) — Claude Code CLI HTTP protocol
 - [API Coverage](docs/api-coverage.md) — what's implemented
