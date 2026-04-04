@@ -99,7 +99,7 @@ func TestTokenManager_SaveFnNotCalledIfSameRefresh(t *testing.T) {
 		return nil
 	}
 
-	m.Token(context.Background())
+	_, _ = m.Token(context.Background())
 	if saveCalled {
 		t.Error("saveFn should not be called when refresh token doesn't rotate")
 	}

@@ -41,7 +41,7 @@ func (t *chromeTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	}, utls.HelloChrome_Auto)
 
 	if err := uconn.Handshake(); err != nil {
-		rawConn.Close()
+		_ = rawConn.Close()
 		return nil, fmt.Errorf("utls handshake %s: %w", addr, err)
 	}
 
@@ -66,7 +66,7 @@ func (t *chromeTransport) roundTripH2(conn net.Conn, req *http.Request) (*http.R
 
 	cc, err := t.h2Transport.NewClientConn(conn)
 	if err != nil {
-		conn.Close()
+		_ = conn.Close()
 		return nil, fmt.Errorf("h2 client conn: %w", err)
 	}
 	return cc.RoundTrip(req)

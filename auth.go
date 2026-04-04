@@ -68,7 +68,7 @@ func Login(ctx context.Context, openBrowser func(url string) error) (string, err
 	if err != nil {
 		return "", fmt.Errorf("listen: %w", err)
 	}
-	defer listener.Close()
+	defer func() { _ = listener.Close() }()
 
 	port := listener.Addr().(*net.TCPAddr).Port
 	redirectURI := fmt.Sprintf("%s:%d/callback", oauthRedirectBase, port)
@@ -105,7 +105,7 @@ func Login(ctx context.Context, openBrowser func(url string) error) (string, err
 			desc := r.URL.Query().Get("error_description")
 			logError("oauth: authorization error", "error", errMsg, "description", desc)
 			errCh <- fmt.Errorf("oauth error: %s: %s", errMsg, desc)
-			fmt.Fprintf(w, "<html><body><h1>Authentication failed</h1><p>%s</p></body></html>", errMsg)
+			_, _ = fmt.Fprintf(w, "<html><body><h1>Authentication failed</h1><p>%s</p></body></html>", errMsg)
 			return
 		}
 		code := r.URL.Query().Get("code")
@@ -117,12 +117,12 @@ func Login(ctx context.Context, openBrowser func(url string) error) (string, err
 		}
 		logDebug("oauth: authorization code received", "code_len", len(code))
 		codeCh <- code
-		fmt.Fprint(w, "<html><body><h1>Authentication successful</h1><p>You can close this window.</p></body></html>")
+		_, _ = fmt.Fprint(w, "<html><body><h1>Authentication successful</h1><p>You can close this window.</p></body></html>")
 	})
 
 	server := &http.Server{Handler: mux}
-	go server.Serve(listener)
-	defer server.Shutdown(context.Background())
+	go func() { _ = server.Serve(listener) }()
+	defer func() { _ = server.Shutdown(context.Background()) }()
 
 	// Open browser
 	logDebug("oauth: opening browser")
@@ -230,7 +230,7 @@ func refreshAccessToken(ctx context.Context, refreshToken string) (*oauthTokens,
 		logError("oauth: refresh request failed", "elapsed", elapsed, "error", err)
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	logDebug("oauth: refresh response", "status", resp.StatusCode, "elapsed", elapsed)
 
@@ -338,7 +338,7 @@ func exchangeCode(ctx context.Context, code, verifier, redirectURI, state string
 		logError("oauth: token exchange request failed", "elapsed", elapsed, "error", err)
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	logDebug("oauth: token exchange response", "status", resp.StatusCode, "elapsed", elapsed)
 
@@ -387,7 +387,7 @@ func FetchProfile(ctx context.Context, accessToken string) (*Profile, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)

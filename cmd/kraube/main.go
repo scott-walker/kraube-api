@@ -199,7 +199,7 @@ func cmdStream(ctx context.Context, prompt string) {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
-	defer stream.Close()
+	defer func() { _ = stream.Close() }()
 
 	for stream.Next() {
 		if evt, ok := stream.Event().(*kraube.ContentBlockDeltaEvent); ok {
