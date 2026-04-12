@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.3.0] - 2026-04-12
+
+### Breaking
+- Token file format changed from plain-text back to JSON at `~/.config/kraube/credentials.json`. Stores `refreshToken`, `accessToken`, and `expiresAt` together so live access tokens are reused across restarts without extra refresh calls.
+- Removed `SaveToken`, `LoadToken`, `DefaultTokenPath`. Use `SaveCredentials`, `LoadCredentials`, `DefaultCredentialsPath` + the new `Credentials` struct instead.
+- `Login` / `LoginManual` now return `*Credentials` instead of `string`.
+- CLI: `kraube login` writes the new JSON file (old `~/.config/kraube/token` is ignored — re-run `kraube login` after upgrading).
+
+### Added
+- Safe multi-process operation on the same machine: `WithTokenFile` now acquires an OS-level file lock (`flock(2)` / `LockFileEx`) around refresh and re-reads the file under the lock, so parallel processes share a single rotated refresh token without racing.
+- `KRAUBE_CREDENTIALS_PATH` environment variable: overrides the default credentials path for both the CLI and `WithTokenFile("")`.
+- CLI flag `--out PATH` on `kraube login` to write credentials to a custom path.
+- `Credentials.IsAccessLive()` helper.
+
+### Changed
+- `WithToken(refreshToken)` is now explicitly in-memory only; rotated refresh tokens are not persisted. Use `WithTokenFile` for persistence.
+
 ## [0.2.0] - 2026-04-04
 
 ### Breaking

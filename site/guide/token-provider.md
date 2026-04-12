@@ -12,19 +12,19 @@ type TokenProvider interface {
 
 ### WithTokenFile
 
-Loads the token from a file. Access tokens are obtained and refreshed automatically.
+Loads credentials (refresh + access + expiresAt) from a JSON file. Rotation is serialized across processes via an OS-level file lock, so this is the recommended mode for anything that runs in more than one process on the same machine.
 
 ```go
 client, err := kraube.NewClient(ctx, kraube.WithTokenFile(""))
-// "" = default path: ~/.config/kraube/token
+// "" = default path (honors $KRAUBE_CREDENTIALS_PATH, else ~/.config/kraube/credentials.json)
 ```
 
 ### WithToken
 
-Direct token. Access tokens are obtained and refreshed automatically.
+Takes a refresh token directly. Access tokens are obtained and refreshed automatically, but rotated refresh tokens are kept **in memory only** — they are lost when the process exits. Use `WithTokenFile` for persistent, multi-process setups.
 
 ```go
-client, err := kraube.NewClient(ctx, kraube.WithToken("dGhpcyBp..."))
+client, err := kraube.NewClient(ctx, kraube.WithToken("sk-ant-..."))
 ```
 
 ### WithEnvToken
@@ -62,9 +62,9 @@ func (v *VaultProvider) Token(ctx context.Context) (string, error) {
 
 ## Provider Comparison
 
-| Option | Auto-refresh | Persistence |
-|--------|:---:|:---:|
-| `WithTokenFile(path)` | Yes | Saves rotated tokens to disk |
-| `WithToken(token)` | Yes | In-memory only |
-| `WithEnvToken(envVar)` | Yes | Reads env, manages access in-memory |
-| `WithTokenProvider(p)` | Up to you | Up to you |
+| Option | Auto-refresh | Persistence | Multi-process safe |
+|--------|:---:|:---:|:---:|
+| `WithTokenFile(path)` | Yes | Writes rotated credentials to disk | Yes (file lock) |
+| `WithToken(token)` | Yes | In-memory only | No |
+| `WithEnvToken(envVar)` | Yes | In-memory only | No |
+| `WithTokenProvider(p)` | Up to you | Up to you | Up to you |

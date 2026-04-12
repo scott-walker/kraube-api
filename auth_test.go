@@ -12,16 +12,19 @@ import (
 	"time"
 )
 
-func TestSaveAndLoadToken(t *testing.T) {
+func TestSaveAndLoadCredentials(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "subdir", "token")
-	token := "test-refresh-token-abc123"
-
-	if err := SaveToken(path, token); err != nil {
-		t.Fatalf("SaveToken: %v", err)
+	path := filepath.Join(dir, "subdir", "credentials.json")
+	creds := &Credentials{
+		RefreshToken: "r-abc",
+		AccessToken:  "a-xyz",
+		ExpiresAt:    time.Now().Add(time.Hour).UnixMilli(),
 	}
 
-	// Check file permissions.
+	if err := SaveCredentials(path, creds); err != nil {
+		t.Fatalf("SaveCredentials: %v", err)
+	}
+
 	info, err := os.Stat(path)
 	if err != nil {
 		t.Fatalf("Stat: %v", err)
@@ -30,28 +33,28 @@ func TestSaveAndLoadToken(t *testing.T) {
 		t.Errorf("permissions = %o, want 0600", perm)
 	}
 
-	got, err := LoadToken(path)
+	got, err := LoadCredentials(path)
 	if err != nil {
-		t.Fatalf("LoadToken: %v", err)
+		t.Fatalf("LoadCredentials: %v", err)
 	}
-	if got != token {
-		t.Errorf("LoadToken = %q, want %q", got, token)
+	if got.RefreshToken != creds.RefreshToken || got.AccessToken != creds.AccessToken || got.ExpiresAt != creds.ExpiresAt {
+		t.Errorf("round-trip mismatch: got %+v, want %+v", got, creds)
 	}
 }
 
-func TestLoadToken_NotFound(t *testing.T) {
-	_, err := LoadToken("/nonexistent/path/token")
+func TestLoadCredentials_NotFound(t *testing.T) {
+	_, err := LoadCredentials("/nonexistent/path/credentials.json")
 	if err == nil {
 		t.Fatal("expected error for missing file")
 	}
 }
 
-func TestLoadToken_Empty(t *testing.T) {
+func TestLoadCredentials_Empty(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "token")
+	path := filepath.Join(dir, "credentials.json")
 	_ = os.WriteFile(path, []byte(""), 0600)
 
-	_, err := LoadToken(path)
+	_, err := LoadCredentials(path)
 	if err == nil {
 		t.Fatal("expected error for empty file")
 	}
@@ -60,24 +63,40 @@ func TestLoadToken_Empty(t *testing.T) {
 	}
 }
 
-func TestLoadToken_TrimsWhitespace(t *testing.T) {
+func TestLoadCredentials_Malformed(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "token")
-	_ = os.WriteFile(path, []byte("  my-token\n  "), 0600)
+	path := filepath.Join(dir, "credentials.json")
+	_ = os.WriteFile(path, []byte("not-json"), 0600)
 
-	got, err := LoadToken(path)
-	if err != nil {
-		t.Fatalf("LoadToken: %v", err)
-	}
-	if got != "my-token" {
-		t.Errorf("LoadToken = %q, want %q", got, "my-token")
+	_, err := LoadCredentials(path)
+	if err == nil {
+		t.Fatal("expected error for malformed JSON")
 	}
 }
 
-func TestDefaultTokenPath(t *testing.T) {
-	path := DefaultTokenPath()
-	if !strings.HasSuffix(path, filepath.Join("kraube", "token")) {
-		t.Errorf("DefaultTokenPath = %q, want suffix kraube/token", path)
+func TestLoadCredentials_MissingRefresh(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "credentials.json")
+	_ = os.WriteFile(path, []byte(`{"accessToken":"a"}`), 0600)
+
+	_, err := LoadCredentials(path)
+	if err == nil {
+		t.Fatal("expected error when refreshToken missing")
+	}
+}
+
+func TestDefaultCredentialsPath_Env(t *testing.T) {
+	t.Setenv(CredentialsPathEnv, "/tmp/custom-creds.json")
+	if got := DefaultCredentialsPath(); got != "/tmp/custom-creds.json" {
+		t.Errorf("DefaultCredentialsPath = %q, want env override", got)
+	}
+}
+
+func TestDefaultCredentialsPath_Default(t *testing.T) {
+	t.Setenv(CredentialsPathEnv, "")
+	path := DefaultCredentialsPath()
+	if !strings.HasSuffix(path, filepath.Join("kraube", "credentials.json")) {
+		t.Errorf("DefaultCredentialsPath = %q, want suffix kraube/credentials.json", path)
 	}
 }
 
@@ -138,37 +157,37 @@ func TestRandomString(t *testing.T) {
 	}
 }
 
-func TestOAuthTokensIsExpired(t *testing.T) {
+func TestCredentialsIsAccessLive(t *testing.T) {
 	tests := []struct {
-		name    string
-		tokens  oauthTokens
-		expired bool
+		name  string
+		creds Credentials
+		live  bool
 	}{
 		{
 			"empty access token",
-			oauthTokens{accessToken: "", expiresAt: time.Now().Add(time.Hour).UnixMilli()},
-			true,
-		},
-		{
-			"not expired",
-			oauthTokens{accessToken: "tok", expiresAt: time.Now().Add(5 * time.Minute).UnixMilli()},
+			Credentials{AccessToken: "", ExpiresAt: time.Now().Add(time.Hour).UnixMilli()},
 			false,
 		},
 		{
-			"expired",
-			oauthTokens{accessToken: "tok", expiresAt: time.Now().Add(-time.Minute).UnixMilli()},
+			"live",
+			Credentials{AccessToken: "tok", ExpiresAt: time.Now().Add(5 * time.Minute).UnixMilli()},
 			true,
 		},
 		{
+			"expired",
+			Credentials{AccessToken: "tok", ExpiresAt: time.Now().Add(-time.Minute).UnixMilli()},
+			false,
+		},
+		{
 			"within 60s buffer",
-			oauthTokens{accessToken: "tok", expiresAt: time.Now().Add(30 * time.Second).UnixMilli()},
-			true,
+			Credentials{AccessToken: "tok", ExpiresAt: time.Now().Add(30 * time.Second).UnixMilli()},
+			false,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := tt.tokens.isExpired(); got != tt.expired {
-				t.Errorf("isExpired = %v, want %v", got, tt.expired)
+			if got := tt.creds.IsAccessLive(); got != tt.live {
+				t.Errorf("IsAccessLive = %v, want %v", got, tt.live)
 			}
 		})
 	}

@@ -6,9 +6,9 @@ All options for `kraube.NewClient(ctx, ...Option)`.
 
 | Option | Description |
 |--------|-------------|
-| `WithTokenFile(path)` | Load from file. `""` = default path. |
-| `WithToken(token)` | Direct token. |
-| `WithEnvToken(envVar)` | Read token from environment variable. |
+| `WithTokenFile(path)` | Load credentials from JSON file. `""` = `$KRAUBE_CREDENTIALS_PATH` → `~/.config/kraube/credentials.json`. Uses OS-level file lock to coordinate refresh across parallel processes. |
+| `WithToken(refreshToken)` | Refresh token held in memory; rotation is not persisted. |
+| `WithEnvToken(envVar)` | Refresh token from environment variable (in-memory). |
 | `WithTokenProvider(p)` | Custom TokenProvider implementation. |
 
 ## HTTP

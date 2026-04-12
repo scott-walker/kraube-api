@@ -32,41 +32,61 @@ var oauthTokenURL = "https://platform.claude.com/v1/oauth/token"
 // setOAuthTokenURL overrides the token URL (for testing).
 func setOAuthTokenURL(url string) { oauthTokenURL = url }
 
-// oauthTokens is the internal representation of an OAuth token pair.
-// Access tokens are short-lived (~1 hour) and managed in memory.
-// Refresh tokens are long-lived and persisted to disk.
+// Credentials is the on-disk representation of an OAuth session.
+// All three fields are persisted together so any process on the machine
+// can reuse a live access token without performing an unnecessary refresh.
+type Credentials struct {
+	RefreshToken string `json:"refreshToken"`
+	AccessToken  string `json:"accessToken"`
+	ExpiresAt    int64  `json:"expiresAt"` // unix ms
+}
+
+// IsAccessLive reports whether the stored access token is still valid
+// with a 60-second safety margin.
+func (c *Credentials) IsAccessLive() bool {
+	if c == nil || c.AccessToken == "" {
+		return false
+	}
+	return time.Now().UnixMilli() < c.ExpiresAt-60_000
+}
+
+// oauthTokens is the internal representation returned by the OAuth endpoints.
 type oauthTokens struct {
 	accessToken  string
 	refreshToken string
 	expiresAt    int64 // unix ms
 }
 
-func (t *oauthTokens) isExpired() bool {
-	return t.accessToken == "" || time.Now().UnixMilli() >= t.expiresAt-60_000
+func (t *oauthTokens) toCredentials() *Credentials {
+	return &Credentials{
+		RefreshToken: t.refreshToken,
+		AccessToken:  t.accessToken,
+		ExpiresAt:    t.expiresAt,
+	}
 }
 
 // Login performs the full OAuth authorization_code flow with PKCE.
 // It opens the browser and waits for the callback.
-// Returns the token for storage on success.
-func Login(ctx context.Context, openBrowser func(url string) error) (string, error) {
+// Returns the full credentials (refresh + access + expiresAt) for storage on success.
+func Login(ctx context.Context, openBrowser func(url string) error) (*Credentials, error) {
 	logInfo("oauth: starting login flow")
 
 	// Generate PKCE
 	verifier, challenge, err := generatePKCE()
 	if err != nil {
-		return "", fmt.Errorf("generate PKCE: %w", err)
+		return nil, fmt.Errorf("generate PKCE: %w", err)
 	}
 	logDebug("oauth: PKCE generated", "challenge_len", len(challenge), "verifier_len", len(verifier))
 
 	state, err := randomString(32)
 	if err != nil {
-		return "", fmt.Errorf("generate state: %w", err)
+		return nil, fmt.Errorf("generate state: %w", err)
 	}
 
 	// Start local server to receive callback
 	listener, err := net.Listen("tcp", "localhost:0")
 	if err != nil {
-		return "", fmt.Errorf("listen: %w", err)
+		return nil, fmt.Errorf("listen: %w", err)
 	}
 	defer func() { _ = listener.Close() }()
 
@@ -127,7 +147,7 @@ func Login(ctx context.Context, openBrowser func(url string) error) (string, err
 	// Open browser
 	logDebug("oauth: opening browser")
 	if err := openBrowser(authURL); err != nil {
-		return "", fmt.Errorf("open browser: %w", err)
+		return nil, fmt.Errorf("open browser: %w", err)
 	}
 	logDebug("oauth: browser opened, waiting for callback...")
 
@@ -137,19 +157,19 @@ func Login(ctx context.Context, openBrowser func(url string) error) (string, err
 	case code = <-codeCh:
 		logDebug("oauth: code received, exchanging for tokens")
 	case err := <-errCh:
-		return "", err
+		return nil, err
 	case <-ctx.Done():
 		logWarn("oauth: login cancelled by context")
-		return "", ctx.Err()
+		return nil, ctx.Err()
 	}
 
 	// Exchange code for tokens
 	tokens, err := exchangeCode(ctx, code, verifier, redirectURI, state)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	logInfo("oauth: login successful")
-	return tokens.refreshToken, nil
+	return tokens.toCredentials(), nil
 }
 
 // LoginManual performs OAuth login without a local callback server.
@@ -157,17 +177,17 @@ func Login(ctx context.Context, openBrowser func(url string) error) (string, err
 // Ideal for headless/SSH environments.
 //
 // The readCode function should prompt the user and return the pasted code.
-func LoginManual(ctx context.Context, readCode func(authURL string) (string, error)) (string, error) {
+func LoginManual(ctx context.Context, readCode func(authURL string) (string, error)) (*Credentials, error) {
 	logInfo("oauth: starting manual login flow")
 
 	verifier, challenge, err := generatePKCE()
 	if err != nil {
-		return "", fmt.Errorf("generate PKCE: %w", err)
+		return nil, fmt.Errorf("generate PKCE: %w", err)
 	}
 
 	state, err := randomString(32)
 	if err != nil {
-		return "", fmt.Errorf("generate state: %w", err)
+		return nil, fmt.Errorf("generate state: %w", err)
 	}
 
 	params := url.Values{
@@ -185,20 +205,20 @@ func LoginManual(ctx context.Context, readCode func(authURL string) (string, err
 
 	raw, err := readCode(authURL)
 	if err != nil {
-		return "", fmt.Errorf("read code: %w", err)
+		return nil, fmt.Errorf("read code: %w", err)
 	}
 	code := extractAuthCode(strings.TrimSpace(raw))
 	if code == "" {
-		return "", fmt.Errorf("could not extract authorization code from input")
+		return nil, fmt.Errorf("could not extract authorization code from input")
 	}
 	logDebug("oauth: manual code extracted", "code_len", len(code))
 
 	tokens, err := exchangeCode(ctx, code, verifier, oauthManualRedirect, state)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	logInfo("oauth: manual login successful")
-	return tokens.refreshToken, nil
+	return tokens.toCredentials(), nil
 }
 
 // refreshAccessToken exchanges a refresh token for a new access token.
@@ -257,46 +277,70 @@ func refreshAccessToken(ctx context.Context, refreshToken string) (*oauthTokens,
 	return tokens, nil
 }
 
-// --- Token persistence ---
+// --- Credentials persistence ---
 
-// DefaultTokenPath returns ~/.config/kraube/token.
-func DefaultTokenPath() string {
+// CredentialsPathEnv is the environment variable used to override the default
+// credentials file location. Read by DefaultCredentialsPath and honored by
+// both the CLI and WithTokenFile("").
+const CredentialsPathEnv = "KRAUBE_CREDENTIALS_PATH"
+
+// DefaultCredentialsPath returns the path where credentials are stored.
+// Resolution order: $KRAUBE_CREDENTIALS_PATH → $XDG_CONFIG_HOME/kraube/credentials.json → ~/.config/kraube/credentials.json.
+func DefaultCredentialsPath() string {
+	if p := os.Getenv(CredentialsPathEnv); p != "" {
+		return p
+	}
 	dir := os.Getenv("XDG_CONFIG_HOME")
 	if dir == "" {
 		home, _ := os.UserHomeDir()
 		dir = filepath.Join(home, ".config")
 	}
-	return filepath.Join(dir, "kraube", "token")
+	return filepath.Join(dir, "kraube", "credentials.json")
 }
 
-// SaveToken writes a token to disk with restricted permissions.
-func SaveToken(path, token string) error {
-	logDebug("token: saving", "path", path)
+// SaveCredentials writes credentials to disk as JSON with restricted permissions (0600).
+// The parent directory is created with 0700 if missing.
+func SaveCredentials(path string, creds *Credentials) error {
+	if creds == nil {
+		return fmt.Errorf("credentials is nil")
+	}
+	logDebug("credentials: saving", "path", path)
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return err
 	}
-	if err := os.WriteFile(path, []byte(token), 0600); err != nil {
+	data, err := json.MarshalIndent(creds, "", "  ")
+	if err != nil {
 		return err
 	}
-	logDebug("token: saved", "path", path)
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		return err
+	}
+	logDebug("credentials: saved", "path", path)
 	return nil
 }
 
-// LoadToken reads a token from disk.
-func LoadToken(path string) (string, error) {
-	logDebug("token: loading", "path", path)
+// LoadCredentials reads credentials from disk.
+// Returns an error if the file is missing, empty, or malformed.
+func LoadCredentials(path string) (*Credentials, error) {
+	logDebug("credentials: loading", "path", path)
 	data, err := os.ReadFile(path)
 	if err != nil {
-		logDebug("token: file not found", "path", path, "error", err)
-		return "", err
+		logDebug("credentials: file not found", "path", path, "error", err)
+		return nil, err
 	}
-	token := strings.TrimSpace(string(data))
-	if token == "" {
-		return "", fmt.Errorf("token file is empty: %s", path)
+	if len(strings.TrimSpace(string(data))) == 0 {
+		return nil, fmt.Errorf("credentials file is empty: %s", path)
 	}
-	logDebug("token: loaded", "path", path)
-	return token, nil
+	var creds Credentials
+	if err := json.Unmarshal(data, &creds); err != nil {
+		return nil, fmt.Errorf("parse credentials at %s: %w", path, err)
+	}
+	if creds.RefreshToken == "" {
+		return nil, fmt.Errorf("credentials at %s has no refreshToken", path)
+	}
+	logDebug("credentials: loaded", "path", path)
+	return &creds, nil
 }
 
 // --- Token exchange ---

@@ -93,7 +93,7 @@ func NewClient(ctx context.Context, opts ...Option) (*Client, error) {
 		opt(cfg)
 	}
 
-	if cfg.provider == nil {
+	if cfg.provider == nil && cfg.credentialsPath == "" {
 		return nil, fmt.Errorf("no token source specified: use WithToken, WithTokenFile, WithTokenProvider, etc")
 	}
 
@@ -112,16 +112,17 @@ func NewClient(ctx context.Context, opts ...Option) (*Client, error) {
 		c.HTTPClient = &http.Client{Transport: newChromeTransport()}
 	}
 
-	// Resolve deferred providers.
+	// Resolve deferred file-based provider. This is done here (not in the
+	// option) so $KRAUBE_CREDENTIALS_PATH is read at NewClient time.
 	provider := cfg.provider
-	if p, ok := provider.(*deferredFileProvider); ok {
-		token, err := LoadToken(p.path)
-		if err != nil {
-			return nil, fmt.Errorf("load token: %w (run Login first)", err)
+	if provider == nil && cfg.credentialsPath != "" {
+		path := cfg.credentialsPath
+		if path == "_default_" {
+			path = DefaultCredentialsPath()
 		}
-		tm := newTokenManager(token)
-		tm.saveFn = func(t string) error {
-			return SaveToken(p.path, t)
+		tm, err := newFileTokenManager(path)
+		if err != nil {
+			return nil, err
 		}
 		provider = tm
 	}

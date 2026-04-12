@@ -19,13 +19,17 @@ func main() {
 
 	if len(os.Args) < 2 {
 		fmt.Fprintln(os.Stderr, "Usage:")
-		fmt.Fprintln(os.Stderr, "  kraube login              — authenticate via browser")
+		fmt.Fprintln(os.Stderr, "  kraube login [--out PATH]  — authenticate via browser")
 		fmt.Fprintln(os.Stderr, "  kraube usage               — show plan usage limits")
 		fmt.Fprintln(os.Stderr, "  kraube \"your prompt\"       — send a message")
 		fmt.Fprintln(os.Stderr, "  kraube stream \"prompt\"     — stream response")
 		fmt.Fprintln(os.Stderr, "")
 		fmt.Fprintln(os.Stderr, "Flags:")
 		fmt.Fprintln(os.Stderr, "  --debug                    — verbose logging (or KRAUBE_DEBUG=1)")
+		fmt.Fprintln(os.Stderr, "  --out PATH                 — credentials file path (login only)")
+		fmt.Fprintln(os.Stderr, "")
+		fmt.Fprintln(os.Stderr, "Env:")
+		fmt.Fprintln(os.Stderr, "  KRAUBE_CREDENTIALS_PATH    — override credentials file path globally")
 		os.Exit(1)
 	}
 
@@ -48,8 +52,13 @@ func main() {
 }
 
 func cmdLogin(ctx context.Context) {
+	path := flagValue("--out")
+	if path == "" {
+		path = kraube.DefaultCredentialsPath()
+	}
+
 	// Manual OAuth flow: print URL, user pastes code
-	token, err := kraube.LoginManual(ctx, func(authURL string) (string, error) {
+	creds, err := kraube.LoginManual(ctx, func(authURL string) (string, error) {
 		fmt.Println("Open this URL in your browser:")
 		fmt.Println()
 		fmt.Println("  " + authURL)
@@ -67,12 +76,11 @@ func cmdLogin(ctx context.Context) {
 		os.Exit(1)
 	}
 
-	path := kraube.DefaultTokenPath()
-	if err := kraube.SaveToken(path, token); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to save token: %v\n", err)
+	if err := kraube.SaveCredentials(path, creds); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to save credentials: %v\n", err)
 		os.Exit(1)
 	}
-	fmt.Printf("Authenticated! Token saved to %s\n", path)
+	fmt.Printf("Authenticated! Credentials saved to %s\n", path)
 }
 
 func cmdUsage(ctx context.Context) {
@@ -233,4 +241,17 @@ func hasFlag(flag string) bool {
 		}
 	}
 	return false
+}
+
+// flagValue extracts and removes a "--key VALUE" pair from os.Args.
+// Returns the value, or "" if the flag is not present.
+func flagValue(flag string) string {
+	for i, arg := range os.Args {
+		if arg == flag && i+1 < len(os.Args) {
+			value := os.Args[i+1]
+			os.Args = append(os.Args[:i], os.Args[i+2:]...)
+			return value
+		}
+	}
+	return ""
 }

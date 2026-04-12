@@ -24,11 +24,12 @@ kraube usage
 ```go
 ctx := context.Background()
 
-// Из сохранённого токена (по умолчанию ~/.config/kraube/token)
+// Из сохранённых credentials (по умолчанию ~/.config/kraube/credentials.json;
+// переопределяется KRAUBE_CREDENTIALS_PATH). Безопасно для параллельных процессов.
 client, err := kraube.NewClient(ctx, kraube.WithTokenFile(""))
 
-// Из токена напрямую
-client, err := kraube.NewClient(ctx, kraube.WithToken(token))
+// Из refresh-токена напрямую (в памяти, ротация не сохраняется)
+client, err := kraube.NewClient(ctx, kraube.WithToken(refreshToken))
 
 // Из env variable
 client, err := kraube.NewClient(ctx, kraube.WithEnvToken("KRAUBE_TOKEN"))

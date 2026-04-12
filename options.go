@@ -1,7 +1,6 @@
 package kraube
 
 import (
-	"context"
 	"net/http"
 )
 
@@ -20,6 +19,12 @@ type clientConfig struct {
 
 	// Behavior
 	skipProfile bool
+
+	// Deferred token source resolution. When non-empty, NewClient reads
+	// credentials from this path at construction time. A path of "_default_"
+	// resolves to DefaultCredentialsPath() when NewClient runs, which picks
+	// up $KRAUBE_CREDENTIALS_PATH at that moment.
+	credentialsPath string
 }
 
 // --- Token source options ---
@@ -30,32 +35,46 @@ type clientConfig struct {
 func WithTokenProvider(p TokenProvider) Option {
 	return func(c *clientConfig) {
 		c.provider = p
+		c.credentialsPath = ""
 	}
 }
 
-// WithToken creates a client with the given token.
-// The token is obtained from `kraube login` and handles authentication automatically.
-func WithToken(token string) Option {
+// WithToken creates a client with the given refresh token held in memory.
+//
+// Rotated refresh tokens are kept in memory only — when the process exits,
+// they are lost. For a persistent setup that survives restarts and works
+// across parallel processes, use WithTokenFile instead.
+func WithToken(refreshToken string) Option {
 	return func(c *clientConfig) {
-		c.provider = newTokenManager(token)
+		c.provider = newMemoryTokenManager(refreshToken)
+		c.credentialsPath = ""
 	}
 }
 
-// WithTokenFile loads the token from a file.
-// Pass "" to use the default path (~/.config/kraube/token).
+// WithTokenFile loads credentials from a JSON file on disk.
+// Pass "" to use the default path (honors $KRAUBE_CREDENTIALS_PATH, otherwise
+// ~/.config/kraube/credentials.json).
+//
+// This mode uses an OS-level file lock to serialize refresh operations across
+// processes, so multiple instances on the same machine share a single rotated
+// refresh token safely.
 func WithTokenFile(path string) Option {
 	return func(c *clientConfig) {
+		c.provider = nil
 		if path == "" {
-			path = DefaultTokenPath()
+			c.credentialsPath = "_default_"
+		} else {
+			c.credentialsPath = path
 		}
-		c.provider = &deferredFileProvider{path: path}
 	}
 }
 
-// WithEnvToken reads the token from the given environment variable.
+// WithEnvToken reads the refresh token from the given environment variable.
+// Rotation is held in memory only.
 func WithEnvToken(envVar string) Option {
 	return func(c *clientConfig) {
 		c.provider = newEnvTokenManager(envVar)
+		c.credentialsPath = ""
 	}
 }
 
@@ -84,14 +103,4 @@ func WithoutProfile() Option {
 	return func(c *clientConfig) {
 		c.skipProfile = true
 	}
-}
-
-// --- Deferred providers (resolve at NewClient time) ---
-
-type deferredFileProvider struct {
-	path string
-}
-
-func (p *deferredFileProvider) Token(_ context.Context) (string, error) {
-	panic("deferredFileProvider.Token should not be called directly")
 }

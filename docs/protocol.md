@@ -268,4 +268,4 @@ Claude Code хранит OAuth-токены в `~/.claude/{profile}/.credentials
 
 `expiresAt` — Unix timestamp в **миллисекундах**.
 
-Kraube API хранит токен в `~/.config/kraube/token` (plain text, только refresh token).
+Kraube API хранит credentials в `~/.config/kraube/credentials.json` (JSON: `refreshToken`, `accessToken`, `expiresAt`). Этот формат не совместим с Claude Code — это наш собственный стор.

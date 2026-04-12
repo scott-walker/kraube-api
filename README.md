@@ -43,7 +43,7 @@ go build -o kraube ./cmd/kraube/
 kraube login
 ```
 
-Opens browser for OAuth, saves token to `~/.config/kraube/token`.
+Opens browser for OAuth, saves credentials to `~/.config/kraube/credentials.json`. Override with `--out PATH` or `KRAUBE_CREDENTIALS_PATH`.
 
 ### Use
 
@@ -75,18 +75,19 @@ type TokenProvider interface {
 
 Built-in options:
 
-| Option | Description | Auto-refresh |
-|--------|-------------|:---:|
-| `WithTokenFile(path)` | File, refreshes automatically | Yes |
-| `WithToken(token)` | Direct token | Yes |
-| `WithEnvToken(envVar)` | Environment variable | Yes |
-| `WithTokenProvider(p)` | Any custom implementation | Up to you |
+| Option | Description | Auto-refresh | Multi-process safe |
+|--------|-------------|:---:|:---:|
+| `WithTokenFile(path)` | JSON credentials file + OS-level file lock | Yes | Yes |
+| `WithToken(token)` | Refresh token held in memory | Yes | No (in-memory only) |
+| `WithEnvToken(envVar)` | Refresh token from env var (in-memory) | Yes | No |
+| `WithTokenProvider(p)` | Any custom implementation | Up to you | Up to you |
 
 ```go
-// From file (after kraube login)
+// From file (after kraube login). Safe across parallel processes on the
+// same machine — refresh is serialized via flock(2) / LockFileEx.
 client, _ := kraube.NewClient(ctx, kraube.WithTokenFile(""))
 
-// Direct token
+// Refresh token directly. In-memory only — rotations are not persisted.
 client, _ := kraube.NewClient(ctx, kraube.WithToken(os.Getenv("MY_TOKEN")))
 
 // Custom provider (Vault, Redis, DB...)

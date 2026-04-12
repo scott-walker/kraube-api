@@ -17,26 +17,50 @@ This performs an OAuth Authorization Code flow with PKCE:
 3. User authorizes in browser
 4. Callback receives authorization code
 5. Exchanges code for tokens
-6. Saves token to `~/.config/kraube/token`
+6. Saves credentials to `~/.config/kraube/credentials.json`
 
-## Token
+Override the path with `--out PATH` or the `KRAUBE_CREDENTIALS_PATH` environment variable. Both `kraube login` and `WithTokenFile("")` honor the same env var, so a single override covers the whole stack.
 
-After login, the token is stored as a plain string in `~/.config/kraube/token` with `0600` permissions.
+## Credentials file
 
-The token is all you need — short-lived access tokens are obtained and refreshed automatically under the hood.
+The file is JSON with `0600` permissions:
 
-## Auto-refresh
+```json
+{
+  "refreshToken": "...",
+  "accessToken": "...",
+  "expiresAt": 1760000000000
+}
+```
 
-All built-in providers automatically obtain and refresh access tokens when needed. Access tokens live only in memory and are never written to disk.
+Storing the live `accessToken` (and its `expiresAt`) means any process on the machine can start using Claude immediately without a refresh round-trip, as long as the cached access token is still valid.
+
+## Auto-refresh and parallel processes
+
+Access tokens are refreshed 60 seconds before expiry.
+
+When you use `WithTokenFile`, refresh is coordinated across processes via an OS-level file lock (`flock(2)` on Linux/macOS, `LockFileEx` on Windows). The flow:
+
+1. Fast path — if the in-memory access token is still live, return it.
+2. Acquire the file lock.
+3. Re-read the credentials file under the lock — another process may have just refreshed.
+4. If the on-disk access token is live, use it.
+5. Otherwise, exchange the refresh token, write the new credentials atomically, release the lock.
+
+This means you can run any number of kraube-api processes on one machine against a single `kraube login`, and refresh happens exactly once per rotation.
 
 ## Headless Login
 
-For SSH or headless environments, `LoginManual` prints the URL and waits for the user to paste the code:
+For SSH or headless environments, `LoginManual` prints the URL and waits for the user to paste the code. It returns a `*Credentials` that you pass to `SaveCredentials`:
 
 ```go
-token, err := kraube.LoginManual(ctx, func(authURL string) (string, error) {
+creds, err := kraube.LoginManual(ctx, func(authURL string) (string, error) {
     fmt.Println("Open:", authURL)
     fmt.Print("Paste code: ")
     // read from stdin...
 })
+if err != nil {
+    return err
+}
+return kraube.SaveCredentials(kraube.DefaultCredentialsPath(), creds)
 ```

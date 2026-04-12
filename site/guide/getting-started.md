@@ -15,7 +15,7 @@ go build -o kraube ./cmd/kraube/
 kraube login
 ```
 
-This opens your browser for OAuth authorization with claude.ai. After confirming, your token is saved to `~/.config/kraube/token`.
+This opens your browser for OAuth authorization with claude.ai. After confirming, your credentials are saved to `~/.config/kraube/credentials.json`. Override the path with `--out PATH` or the `KRAUBE_CREDENTIALS_PATH` environment variable.
 
 ## First request
 
