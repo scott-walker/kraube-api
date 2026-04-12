@@ -72,7 +72,7 @@ client, err := kraube.NewClient(ctx,
 | `types.go` | Типы данных API: Message, ContentBlock, Tool, Schema и т.д. |
 | `request.go` | Request/Response структуры, APIError, streaming events |
 | `client.go` | HTTP-клиент, MessagesService, StreamReader |
-| `auth.go` | OAuth PKCE flow, token refresh, token persistence |
+| `auth.go` | OAuth PKCE flow, token refresh, credentials persistence (JSON) |
 | `provider.go` | TokenProvider интерфейс и встроенные реализации |
 | `options.go` | Functional options для NewClient |
 | `transport.go` | Chrome TLS fingerprint (uTLS) |
