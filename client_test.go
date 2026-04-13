@@ -45,49 +45,61 @@ func TestBillingHeader(t *testing.T) {
 	}
 }
 
-func TestInjectBillingHeader_NoSystem(t *testing.T) {
+func TestInjectSystemPrefix_NoSystem(t *testing.T) {
 	c := &Client{}
 	req := &MessageRequest{}
-	c.injectBillingHeader(req)
+	c.injectSystemPrefix(req)
 
-	if req.System == nil || len(req.System.Blocks) != 1 {
-		t.Fatal("expected 1 system block")
+	if req.System == nil || len(req.System.Blocks) != 2 {
+		t.Fatalf("expected 2 system blocks, got %v", req.System)
 	}
-	if req.System.Blocks[0].Text != billingHeader {
-		t.Error("billing header not injected")
+	if req.System.Blocks[0].Text != claudeCodeIdentity {
+		t.Error("identity preamble should be block[0]")
+	}
+	if req.System.Blocks[1].Text != billingHeader {
+		t.Error("billing header should be block[1]")
 	}
 }
 
-func TestInjectBillingHeader_WithTextSystem(t *testing.T) {
+func TestInjectSystemPrefix_WithTextSystem(t *testing.T) {
 	c := &Client{}
 	req := &MessageRequest{
 		System: SystemText("Be helpful."),
 	}
-	c.injectBillingHeader(req)
+	c.injectSystemPrefix(req)
 
-	if len(req.System.Blocks) != 2 {
-		t.Fatalf("blocks = %d, want 2", len(req.System.Blocks))
+	if len(req.System.Blocks) != 3 {
+		t.Fatalf("blocks = %d, want 3", len(req.System.Blocks))
 	}
-	if req.System.Blocks[0].Text != billingHeader {
-		t.Error("billing header should be first")
+	if req.System.Blocks[0].Text != claudeCodeIdentity {
+		t.Error("identity should be first")
 	}
-	if req.System.Blocks[1].Text != "Be helpful." {
-		t.Error("original text should be preserved")
+	if req.System.Blocks[1].Text != billingHeader {
+		t.Error("billing header should be second")
+	}
+	if req.System.Blocks[2].Text != "Be helpful." {
+		t.Error("original text should be last")
 	}
 }
 
-func TestInjectBillingHeader_WithBlocksSystem(t *testing.T) {
+func TestInjectSystemPrefix_WithBlocksSystem(t *testing.T) {
 	c := &Client{}
 	req := &MessageRequest{
 		System: SystemBlocks(SystemBlock{Type: "text", Text: "existing"}),
 	}
-	c.injectBillingHeader(req)
+	c.injectSystemPrefix(req)
 
-	if len(req.System.Blocks) != 2 {
-		t.Fatalf("blocks = %d, want 2", len(req.System.Blocks))
+	if len(req.System.Blocks) != 3 {
+		t.Fatalf("blocks = %d, want 3", len(req.System.Blocks))
 	}
-	if req.System.Blocks[0].Text != billingHeader {
-		t.Error("billing header should be prepended")
+	if req.System.Blocks[0].Text != claudeCodeIdentity {
+		t.Error("identity should be prepended first")
+	}
+	if req.System.Blocks[1].Text != billingHeader {
+		t.Error("billing header should be prepended second")
+	}
+	if req.System.Blocks[2].Text != "existing" {
+		t.Error("existing block should be preserved last")
 	}
 }
 

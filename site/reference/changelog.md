@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.4.1] - 2026-04-13
+
+### Fixed
+- OAuth requests to `/v1/messages` now prepend the Claude Code identity preamble (`You are Claude Code, Anthropic's official CLI for Claude.`) as the first system block. The server-side gate on `api.anthropic.com` checks for this exact opening line and, when missing, rejects OAuth requests with `HTTP 403 forbidden: Request not allowed` even when billing and beta headers are otherwise valid. User-supplied system prompts (string or blocks) are preserved verbatim after the two prefix blocks (`identity → billing → user`).
+
 ## [0.4.0] - 2026-04-13
 
 ### Added

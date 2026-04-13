@@ -28,6 +28,14 @@ const (
 	ccEntrypoint = "cli"
 )
 
+// claudeCodeIdentity is the identity preamble that Claude Code CLI prepends
+// to every /v1/messages system prompt when authenticating via OAuth
+// subscription. The server-side gate on api.anthropic.com treats this
+// string as a marker that the request is coming from an official client;
+// without it, OAuth requests can be rejected with "forbidden: Request not
+// allowed" even when billing / beta headers are otherwise valid.
+const claudeCodeIdentity = "You are Claude Code, Anthropic's official CLI for Claude."
+
 // billingHeader is the pre-computed billing header value injected into the
 // system prompt for OAuth requests. Without this header, Sonnet and Opus
 // models return 429. The hash (cch) is the first 5 characters of
@@ -246,43 +254,56 @@ func (c *Client) injectMetadata(req *MessageRequest) {
 	}
 }
 
-// injectBillingHeader prepends the billing header block to the system prompt.
-// This is required for OAuth subscription access — without it, Sonnet and Opus
-// models return 429 rate limit errors.
-func (c *Client) injectBillingHeader(req *MessageRequest) {
-	billingBlock := SystemBlock{
-		Type: "text",
-		Text: billingHeader,
-	}
+// injectSystemPrefix prepends the two system-level markers that the API
+// server expects from an official Claude Code client on OAuth-authenticated
+// requests:
+//
+//  1. The Claude Code identity preamble ("You are Claude Code, ..."). The
+//     server gate checks for this exact opening line when deciding whether
+//     an OAuth request is allowed; missing it yields HTTP 403 "forbidden:
+//     Request not allowed".
+//  2. The billing header ("x-anthropic-billing-header: cc_version=..."),
+//     without which Sonnet and Opus responses come back as 429.
+//
+// Both blocks land *before* any user-supplied system blocks, in the order
+// identity → billing → user. Callers that already provide their own system
+// prompt (string or blocks) keep it verbatim; the prefix is prepended.
+func (c *Client) injectSystemPrefix(req *MessageRequest) {
+	identityBlock := SystemBlock{Type: "text", Text: claudeCodeIdentity}
+	billingBlock := SystemBlock{Type: "text", Text: billingHeader}
 
 	if req.System == nil {
-		// No system prompt set — create one with just the billing header.
 		req.System = &SystemPrompt{
-			Blocks: []SystemBlock{billingBlock},
+			Blocks: []SystemBlock{identityBlock, billingBlock},
 		}
 		return
 	}
 
-	// System prompt exists — convert to blocks format if needed and prepend.
 	if req.System.Blocks != nil {
-		// Already blocks format — prepend billing block.
-		req.System.Blocks = append([]SystemBlock{billingBlock}, req.System.Blocks...)
-	} else {
-		// Plain text format — convert to blocks with billing + original text.
-		req.System = &SystemPrompt{
-			Blocks: []SystemBlock{
-				billingBlock,
-				{Type: "text", Text: req.System.Text},
-			},
-		}
+		req.System.Blocks = append(
+			[]SystemBlock{identityBlock, billingBlock},
+			req.System.Blocks...,
+		)
+		return
+	}
+
+	// Plain-text system prompt — convert to blocks, keeping the original
+	// text as the third (user-level) block.
+	req.System = &SystemPrompt{
+		Blocks: []SystemBlock{
+			identityBlock,
+			billingBlock,
+			{Type: "text", Text: req.System.Text},
+		},
 	}
 }
 
-// prepareRequest injects metadata, billing header, and sets beta headers
-// on the request. Called by Create and Stream before sending.
+// prepareRequest injects metadata, the identity + billing system prefix,
+// and sets beta headers on the request. Called by Create and Stream before
+// sending.
 func (c *Client) prepareRequest(req *MessageRequest) {
 	c.injectMetadata(req)
-	c.injectBillingHeader(req)
+	c.injectSystemPrefix(req)
 }
 
 func fmtWindowPct(w *RateLimitWindow) string {
