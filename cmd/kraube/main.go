@@ -11,10 +11,29 @@ import (
 	"github.com/scott-walker/kraube-api"
 )
 
+// cliProxy holds the proxy URL parsed from the --proxy flag (if any). When
+// empty, the client still picks up HTTPS_PROXY / ALL_PROXY from the
+// environment automatically inside NewClient.
+var cliProxy string
+
 func main() {
 	// Dev logging: kraube --debug ... or KRAUBE_DEBUG=1
 	if hasFlag("--debug") || os.Getenv("KRAUBE_DEBUG") == "1" {
 		kraube.EnableDevLog()
+	}
+
+	// Global proxy flag — applies to all subcommands (login, usage, query,
+	// stream). Parsed before command dispatch so it is stripped from os.Args.
+	cliProxy = flagValue("--proxy")
+
+	// If --proxy is set, route OAuth calls (login / refresh / FetchProfile)
+	// through the same chrome-fingerprinted transport + proxy as the message
+	// traffic. Without this, `kraube login` would go direct even with --proxy.
+	if cliProxy != "" {
+		if err := applyAuthProxy(cliProxy); err != nil {
+			fmt.Fprintf(os.Stderr, "proxy: %v\n", err)
+			os.Exit(1)
+		}
 	}
 
 	if len(os.Args) < 2 {
@@ -27,9 +46,13 @@ func main() {
 		fmt.Fprintln(os.Stderr, "Flags:")
 		fmt.Fprintln(os.Stderr, "  --debug                    — verbose logging (or KRAUBE_DEBUG=1)")
 		fmt.Fprintln(os.Stderr, "  --out PATH                 — credentials file path (login only)")
+		fmt.Fprintln(os.Stderr, "  --proxy URL                — route all traffic through proxy")
+		fmt.Fprintln(os.Stderr, "                               schemes: http, https, socks5, socks5h")
+		fmt.Fprintln(os.Stderr, "                               (falls back to HTTPS_PROXY/ALL_PROXY env)")
 		fmt.Fprintln(os.Stderr, "")
 		fmt.Fprintln(os.Stderr, "Env:")
 		fmt.Fprintln(os.Stderr, "  KRAUBE_CREDENTIALS_PATH    — override credentials file path globally")
+		fmt.Fprintln(os.Stderr, "  HTTPS_PROXY / ALL_PROXY    — proxy URL (used when --proxy not given)")
 		os.Exit(1)
 	}
 
@@ -224,12 +247,30 @@ func cmdStream(ctx context.Context, prompt string) {
 }
 
 func mustClient(ctx context.Context) *kraube.Client {
-	client, err := kraube.NewClient(ctx, kraube.WithTokenFile(""))
+	opts := []kraube.Option{kraube.WithTokenFile("")}
+	if cliProxy != "" {
+		opts = append(opts, kraube.WithProxy(cliProxy))
+	}
+	client, err := kraube.NewClient(ctx, opts...)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Not authenticated. Run: kraube login\n")
 		os.Exit(1)
 	}
 	return client
+}
+
+// applyAuthProxy installs a package-level HTTP client for kraube's OAuth
+// endpoints, so that `kraube login`, token refresh and standalone
+// FetchProfile calls all go through the requested proxy. The auth client
+// uses the same chrome-fingerprinted transport as the main API client to
+// keep behavior consistent across endpoints.
+func applyAuthProxy(proxyURL string) error {
+	hc, err := kraube.NewProxiedHTTPClient(proxyURL)
+	if err != nil {
+		return err
+	}
+	kraube.SetAuthHTTPClient(hc)
+	return nil
 }
 
 func hasFlag(flag string) bool {

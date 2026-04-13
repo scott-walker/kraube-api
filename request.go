@@ -1,5 +1,7 @@
 package kraube
 
+import "fmt"
+
 // MessageRequest is the request body for POST /v1/messages.
 type MessageRequest struct {
 	Model         Model          `json:"model"`
@@ -105,6 +107,9 @@ type APIErrorDetail struct {
 }
 
 func (e *APIError) Error() string {
+	if e.Status > 0 {
+		return fmt.Sprintf("HTTP %d %s: %s", e.Status, e.Detail.Type, e.Detail.Message)
+	}
 	return e.Detail.Type + ": " + e.Detail.Message
 }
 

@@ -11,6 +11,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"sort"
 	"strings"
 	"time"
 )
@@ -109,7 +111,29 @@ func NewClient(ctx context.Context, opts ...Option) (*Client, error) {
 	if cfg.httpClient != nil {
 		c.HTTPClient = cfg.httpClient
 	} else {
-		c.HTTPClient = &http.Client{Transport: newChromeTransport()}
+		// Resolve proxy: explicit WithProxy wins; if absent (not just empty),
+		// fall back to HTTPS_PROXY / ALL_PROXY. Passing WithProxy("") is an
+		// explicit opt-out that forces a direct connection.
+		var proxyURL *url.URL
+		if cfg.proxySet {
+			if cfg.proxy != "" {
+				u, err := resolveProxy(cfg.proxy)
+				if err != nil {
+					return nil, fmt.Errorf("proxy: %w", err)
+				}
+				proxyURL = u
+			}
+		} else {
+			u, err := resolveProxy("")
+			if err != nil {
+				return nil, fmt.Errorf("proxy: %w", err)
+			}
+			proxyURL = u
+		}
+		if proxyURL != nil {
+			logDebug("client: proxy configured", "url", redactProxyURL(proxyURL))
+		}
+		c.HTTPClient = &http.Client{Transport: newChromeTransport(proxyURL)}
 	}
 
 	// Resolve deferred file-based provider. This is done here (not in the
@@ -149,8 +173,10 @@ func NewClient(ctx context.Context, opts ...Option) (*Client, error) {
 }
 
 // fetchProfile retrieves the OAuth profile and sets up session/device IDs.
+// Routes through c.HTTPClient so WithProxy / WithHTTPClient apply to the
+// profile request the same way they apply to /v1/messages.
 func (c *Client) fetchProfile(ctx context.Context) error {
-	profile, err := FetchProfile(ctx, c.accessToken)
+	profile, err := fetchProfileWithClient(ctx, c.HTTPClient, c.accessToken)
 	if err != nil {
 		return err
 	}
@@ -351,18 +377,24 @@ func (c *Client) doWithModel(ctx context.Context, method, path string, model str
 	}
 
 	var bodyReader io.Reader
-	var bodySize int
+	var bodyBytes []byte
 	if body != nil {
 		data, err := json.Marshal(body)
 		if err != nil {
 			return nil, fmt.Errorf("marshal request: %w", err)
 		}
-		bodySize = len(data)
+		bodyBytes = data
 		bodyReader = bytes.NewReader(data)
 	}
 
 	url := c.BaseURL + path + "?beta=true"
-	logDebug("api: request", "method", method, "path", path, "body_bytes", bodySize)
+	logDebug("api: request", "method", method, "path", path, "body_bytes", len(bodyBytes))
+
+	// Attach a connInfo to the request context so chromeTransport can record
+	// which local/remote addresses were used for the TCP connection. This lets
+	// us surface the egress IP in error logs (useful when routing via proxies).
+	ci := &connInfo{}
+	ctx = context.WithValue(ctx, connInfoKey{}, ci)
 
 	req, err := http.NewRequestWithContext(ctx, method, url, bodyReader)
 	if err != nil {
@@ -382,13 +414,54 @@ func (c *Client) doWithModel(ctx context.Context, method, path string, model str
 	elapsed := time.Since(start)
 
 	if err != nil {
-		logError("api: request failed", "method", method, "path", path, "elapsed", elapsed, "error", err)
+		logError("api: request failed",
+			"method", method,
+			"url", url,
+			"local_addr", ci.LocalAddr,
+			"remote_addr", ci.RemoteAddr,
+			"elapsed", elapsed,
+			"error", err,
+			"request_headers", dumpHeaders(req.Header),
+			"request_body", truncateBody(bodyBytes, 8192),
+		)
 		return nil, err
 	}
 
-	logDebug("api: response", "method", method, "path", path, "status", resp.StatusCode, "elapsed", elapsed)
+	logDebug("api: response",
+		"method", method,
+		"path", path,
+		"status", resp.StatusCode,
+		"elapsed", elapsed,
+		"local_addr", ci.LocalAddr,
+		"remote_addr", ci.RemoteAddr,
+	)
 	if elapsed > 5*time.Second {
 		logWarn("api: slow request", "method", method, "path", path, "elapsed", elapsed, "status", resp.StatusCode)
+	}
+
+	// On error responses, drain the body into a buffer, replace resp.Body with
+	// an in-memory reader (so downstream parseAPIError can still decode it),
+	// and emit a full diagnostic log with request + response details.
+	if resp.StatusCode >= 400 {
+		respBody, readErr := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		if readErr != nil {
+			logWarn("api: error response body read failed", "error", readErr)
+		}
+		resp.Body = io.NopCloser(bytes.NewReader(respBody))
+
+		logError("api: error response",
+			"method", method,
+			"url", url,
+			"status", resp.StatusCode,
+			"elapsed", elapsed,
+			"local_addr", ci.LocalAddr,
+			"remote_addr", ci.RemoteAddr,
+			"request_headers", dumpHeaders(req.Header),
+			"request_body", truncateBody(bodyBytes, 8192),
+			"response_headers", dumpHeaders(resp.Header),
+			"response_body", truncateBody(respBody, 8192),
+		)
 	}
 
 	// Update rate limit info from response headers.
@@ -656,4 +729,46 @@ func parseAPIError(resp *http.Response, c *Client) error {
 	}
 	apiErr.Status = resp.StatusCode
 	return &apiErr
+}
+
+// dumpHeaders serializes HTTP headers into a compact single-line form for
+// logging. The Authorization header is redacted so bearer tokens never leak
+// into stderr or log files.
+func dumpHeaders(h http.Header) string {
+	if len(h) == 0 {
+		return ""
+	}
+	keys := make([]string, 0, len(h))
+	for k := range h {
+		keys = append(keys, k)
+	}
+	// Stable order makes logs diffable across runs.
+	sort.Strings(keys)
+	var b strings.Builder
+	for i, k := range keys {
+		if i > 0 {
+			b.WriteString("; ")
+		}
+		b.WriteString(k)
+		b.WriteString(": ")
+		switch strings.ToLower(k) {
+		case "authorization", "proxy-authorization", "cookie", "set-cookie":
+			b.WriteString("***redacted***")
+		default:
+			b.WriteString(strings.Join(h.Values(k), ","))
+		}
+	}
+	return b.String()
+}
+
+// truncateBody returns a string form of body, trimmed to at most max bytes.
+// Used to keep error logs bounded even when the server returns a huge body.
+func truncateBody(body []byte, max int) string {
+	if len(body) == 0 {
+		return ""
+	}
+	if len(body) <= max {
+		return string(body)
+	}
+	return string(body[:max]) + fmt.Sprintf("... (+%d bytes truncated)", len(body)-max)
 }

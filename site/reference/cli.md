@@ -48,8 +48,15 @@ kraube usage
 
 | Flag | Scope | Description |
 |------|-------|-------------|
-| `--debug` | all commands | Verbose debug logging to stderr |
+| `--debug` | all commands | Verbose debug logging to stderr. Includes full `api: error response` dumps (status, URL, local/remote addresses, proxy, redacted headers, request & response bodies). |
+| `--proxy URL` | all commands | Route all outbound traffic (API + OAuth) through a proxy. Schemes: `http`, `https`, `socks5`, `socks5h`. Credentials in the URL are used for Basic proxy auth. When omitted, `HTTPS_PROXY` / `ALL_PROXY` from the environment are honored automatically. |
 | `--out PATH` | `login` only | Write credentials to a custom path |
+
+```bash
+kraube --proxy http://user:pass@proxy.example.com:8080 "hi"
+kraube --proxy socks5://127.0.0.1:1080 stream "tell me a story"
+HTTPS_PROXY=http://proxy:8080 kraube login    # env is enough — no flag needed
+```
 
 ## Environment
 
@@ -57,3 +64,5 @@ kraube usage
 |----------|-------------|
 | `KRAUBE_DEBUG=1` | Enable debug logging (same as `--debug`) |
 | `KRAUBE_CREDENTIALS_PATH` | Override the default credentials path globally (honored by both the CLI and `WithTokenFile("")`) |
+| `HTTPS_PROXY` / `https_proxy` | Proxy URL used when `--proxy` is not set (checked first) |
+| `ALL_PROXY` / `all_proxy` | Fallback proxy URL when `HTTPS_PROXY` is absent |

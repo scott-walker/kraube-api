@@ -1,8 +1,25 @@
 package kraube
 
 import (
+	"fmt"
 	"net/http"
 )
+
+// NewProxiedHTTPClient returns an *http.Client that uses kraube's Chrome-
+// fingerprinted transport routed through the given proxy URL. Useful for
+// installing a custom auth HTTP client via SetAuthHTTPClient, or as a
+// starting point for WithHTTPClient.
+//
+// Passing an empty proxyURL yields a client that reads HTTPS_PROXY /
+// ALL_PROXY from the environment (same rules as NewClient without
+// WithProxy). Pass a literal URL to force a specific proxy.
+func NewProxiedHTTPClient(proxyURL string) (*http.Client, error) {
+	u, err := resolveProxy(proxyURL)
+	if err != nil {
+		return nil, fmt.Errorf("proxy: %w", err)
+	}
+	return &http.Client{Transport: newChromeTransport(u)}, nil
+}
 
 // Option configures a Client during construction.
 type Option func(*clientConfig)
@@ -13,6 +30,13 @@ type clientConfig struct {
 	// HTTP
 	httpClient *http.Client
 	baseURL    string
+
+	// Proxy. proxy holds an explicit URL passed via WithProxy. proxySet marks
+	// whether WithProxy was called at all — so an empty string explicitly
+	// disables env-based proxy resolution, while a truly absent option falls
+	// back to HTTPS_PROXY / ALL_PROXY.
+	proxy    string
+	proxySet bool
 
 	// Paths
 	rateLimitPath string
@@ -92,6 +116,26 @@ func WithHTTPClient(hc *http.Client) Option {
 func WithBaseURL(url string) Option {
 	return func(c *clientConfig) {
 		c.baseURL = url
+	}
+}
+
+// WithProxy routes all outbound API traffic through the given proxy URL.
+// Supported schemes: http, https, socks5, socks5h. The URL may embed
+// credentials (http://user:pass@host:port) for Basic proxy auth.
+//
+// When this option is omitted, the client automatically honors the
+// HTTPS_PROXY / ALL_PROXY environment variables (in that order). Passing
+// an empty string here explicitly disables both env lookup and proxying,
+// forcing a direct connection even if the environment is set.
+//
+//	client, _ := kraube.NewClient(ctx,
+//	    kraube.WithTokenFile(""),
+//	    kraube.WithProxy("http://user:pass@proxy.example.com:8080"),
+//	)
+func WithProxy(proxyURL string) Option {
+	return func(c *clientConfig) {
+		c.proxy = proxyURL
+		c.proxySet = true
 	}
 }
 

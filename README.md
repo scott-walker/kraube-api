@@ -220,6 +220,65 @@ if err != nil {
 }
 ```
 
+`APIError.Error()` renders as `HTTP <status> <type>: <message>` so the numeric status is always visible, even without a type assertion.
+
+With `--debug` (or `kraube.EnableDevLog()`), every failing request emits a full `api: error response` log line containing the method, URL, HTTP status, local and remote socket addresses, proxy URL (redacted), request headers (with `Authorization` / `Cookie` redacted), request body, response headers, and response body — bounded to 8 KB per field so huge payloads don't flood stderr. Successful requests also log `local_addr` / `remote_addr` / `proxy`, which makes egress-IP problems (multi-homed hosts, split proxies) easy to diagnose.
+
+### Proxy
+
+Kraube can route all API traffic — both `/v1/messages` and OAuth endpoints — through an HTTP, HTTPS, or SOCKS5 proxy. The Chrome TLS fingerprint is preserved end-to-end: the proxy only sees a plain TCP hop, and the uTLS handshake runs over the tunnel directly against `api.anthropic.com`.
+
+**Programmatic:**
+
+```go
+// Explicit proxy URL. Credentials in the URL become Basic proxy auth.
+client, _ := kraube.NewClient(ctx,
+    kraube.WithTokenFile(""),
+    kraube.WithProxy("http://user:pass@proxy.example.com:8080"),
+)
+
+// SOCKS5 (username/password optional)
+client, _ := kraube.NewClient(ctx,
+    kraube.WithTokenFile(""),
+    kraube.WithProxy("socks5://127.0.0.1:1080"),
+)
+
+// No explicit option — HTTPS_PROXY / ALL_PROXY are picked up from the
+// environment automatically.
+client, _ := kraube.NewClient(ctx, kraube.WithTokenFile(""))
+
+// Force a direct connection, ignoring env variables.
+client, _ := kraube.NewClient(ctx,
+    kraube.WithTokenFile(""),
+    kraube.WithProxy(""),
+)
+```
+
+Supported schemes: `http`, `https`, `socks5`, `socks5h`. Any other scheme is a hard error rather than a silent fallback. A bare `host:port` is tolerated and assumed to be `http://`.
+
+**Standalone auth calls** (`LoginManual`, `FetchProfile`) use a package-level HTTP client. Point it through a proxy with `SetAuthHTTPClient`:
+
+```go
+hc, _ := kraube.NewProxiedHTTPClient("http://proxy:8080")
+kraube.SetAuthHTTPClient(hc)
+
+creds, _ := kraube.LoginManual(ctx, readCode)
+```
+
+`NewProxiedHTTPClient("")` returns a client that follows `HTTPS_PROXY` / `ALL_PROXY` from the environment. Passing `nil` to `SetAuthHTTPClient` restores `http.DefaultClient`.
+
+**CLI:**
+
+```bash
+kraube --proxy http://user:pass@proxy.example.com:8080 "hi"
+kraube --proxy socks5://127.0.0.1:1080 stream "tell me a joke"
+
+# Or via environment — no flag needed:
+HTTPS_PROXY=http://proxy:8080 kraube "hi"
+```
+
+The `--proxy` flag applies to every subcommand (`login`, `usage`, `query`, `stream`) and is installed for OAuth calls as well, so `kraube login --proxy ...` also goes through the proxy.
+
 ## Architecture
 
 ```
@@ -242,12 +301,15 @@ Your code ──▶ kraube.Client
 ```bash
 go build -o kraube ./cmd/kraube/
 
-kraube login                  # OAuth via browser
-kraube "What is Go?"          # send a message
-kraube stream "Tell me..."    # stream response
-kraube usage                  # subscription limits
-kraube --debug "prompt"       # debug logging
+kraube login                          # OAuth via browser
+kraube "What is Go?"                  # send a message
+kraube stream "Tell me..."            # stream response
+kraube usage                          # subscription limits
+kraube --debug "prompt"               # verbose logging
+kraube --proxy http://user:pass@host:8080 "prompt"   # route via proxy
 ```
+
+Available flags: `--debug`, `--proxy URL`, `--out PATH` (login only). The client also honors `HTTPS_PROXY` / `ALL_PROXY` and `KRAUBE_CREDENTIALS_PATH` from the environment.
 
 ## Documentation
 

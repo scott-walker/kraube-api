@@ -32,6 +32,28 @@ var oauthTokenURL = "https://platform.claude.com/v1/oauth/token"
 // setOAuthTokenURL overrides the token URL (for testing).
 func setOAuthTokenURL(url string) { oauthTokenURL = url }
 
+// authHTTPClient is used for OAuth flows (login, token exchange, refresh) and
+// for the standalone FetchProfile function. It defaults to http.DefaultClient;
+// call SetAuthHTTPClient to route these calls through a custom transport —
+// typically useful for proxying or fingerprint-cloaking.
+//
+// The per-Client HTTP client configured via kraube.NewClient (and thus
+// WithProxy / WithHTTPClient) is used for /v1/messages and for profile
+// fetching during NewClient, independently of this global — so the global
+// only matters for standalone auth calls (LoginManual, FetchProfile).
+var authHTTPClient *http.Client = http.DefaultClient
+
+// SetAuthHTTPClient installs a package-level HTTP client used for OAuth
+// token flows (login / refresh / exchange) and the standalone FetchProfile
+// helper. Pass nil to restore http.DefaultClient.
+func SetAuthHTTPClient(c *http.Client) {
+	if c == nil {
+		authHTTPClient = http.DefaultClient
+		return
+	}
+	authHTTPClient = c
+}
+
 // Credentials is the on-disk representation of an OAuth session.
 // All three fields are persisted together so any process on the machine
 // can reuse a live access token without performing an unnecessary refresh.
@@ -243,7 +265,7 @@ func refreshAccessToken(ctx context.Context, refreshToken string) (*oauthTokens,
 	req.Header.Set("Content-Type", "application/json")
 
 	start := time.Now()
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := authHTTPClient.Do(req)
 	elapsed := time.Since(start)
 
 	if err != nil {
@@ -375,7 +397,7 @@ func exchangeCode(ctx context.Context, code, verifier, redirectURI, state string
 	req.Header.Set("Content-Type", "application/json")
 
 	start := time.Now()
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := authHTTPClient.Do(req)
 	elapsed := time.Since(start)
 
 	if err != nil {
@@ -417,7 +439,16 @@ type Profile struct {
 }
 
 // FetchProfile retrieves the user's profile using an OAuth access token.
+// Uses the package-level authHTTPClient (see SetAuthHTTPClient).
 func FetchProfile(ctx context.Context, accessToken string) (*Profile, error) {
+	return fetchProfileWithClient(ctx, authHTTPClient, accessToken)
+}
+
+// fetchProfileWithClient performs the profile GET using the provided HTTP
+// client. Called by FetchProfile (with the global auth client) and by
+// Client.fetchProfile (with the per-client HTTPClient, so that WithProxy
+// applies automatically during NewClient).
+func fetchProfileWithClient(ctx context.Context, client *http.Client, accessToken string) (*Profile, error) {
 	logDebug("oauth: fetching profile")
 
 	req, err := http.NewRequestWithContext(ctx, "GET", "https://api.anthropic.com/api/oauth/profile", nil)
@@ -427,7 +458,7 @@ func FetchProfile(ctx context.Context, accessToken string) (*Profile, error) {
 	req.Header.Set("Authorization", "Bearer "+accessToken)
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}

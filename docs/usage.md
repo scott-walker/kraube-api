@@ -49,6 +49,67 @@ client, err := kraube.NewClient(ctx,
 )
 ```
 
+### Прокси
+
+Весь трафик (и `/v1/messages`, и OAuth-запросы профиля) можно направить через HTTP/HTTPS/SOCKS5 прокси. Chrome TLS fingerprint сохраняется: uTLS handshake идёт поверх туннеля напрямую до `api.anthropic.com`.
+
+```go
+// Явный прокси. Логин/пароль в URL — это Basic proxy auth.
+client, err := kraube.NewClient(ctx,
+    kraube.WithTokenFile(""),
+    kraube.WithProxy("http://user:pass@proxy.example.com:8080"),
+)
+
+// SOCKS5
+client, err := kraube.NewClient(ctx,
+    kraube.WithTokenFile(""),
+    kraube.WithProxy("socks5://127.0.0.1:1080"),
+)
+
+// Без опции — клиент сам подхватит HTTPS_PROXY / ALL_PROXY из окружения.
+client, err := kraube.NewClient(ctx, kraube.WithTokenFile(""))
+
+// Принудительно без прокси, даже если в env что-то задано.
+client, err := kraube.NewClient(ctx,
+    kraube.WithTokenFile(""),
+    kraube.WithProxy(""),
+)
+```
+
+Поддерживаемые схемы: `http`, `https`, `socks5`, `socks5h`. Любая другая схема — явная ошибка (чтобы не ходить «мимо прокси» по тихому). `host:port` без схемы интерпретируется как `http://`.
+
+Для standalone auth-вызовов (`LoginManual`, `FetchProfile`) используется отдельный пакетный HTTP-клиент. Чтобы направить и их через прокси:
+
+```go
+hc, _ := kraube.NewProxiedHTTPClient("http://proxy:8080")
+kraube.SetAuthHTTPClient(hc)
+
+creds, _ := kraube.LoginManual(ctx, readCode)
+```
+
+`NewProxiedHTTPClient("")` вернёт клиент, который читает `HTTPS_PROXY` / `ALL_PROXY` из env. `SetAuthHTTPClient(nil)` возвращает дефолт.
+
+В CLI всё то же самое доступно через флаг `--proxy URL`, который применяется к любой подкоманде, включая `kraube login`:
+
+```bash
+kraube --proxy http://user:pass@proxy.example.com:8080 "hi"
+kraube --proxy socks5://127.0.0.1:1080 stream "расскажи историю"
+HTTPS_PROXY=http://proxy:8080 kraube "hi"
+```
+
+### Диагностика через --debug
+
+Флаг `--debug` (или `KRAUBE_DEBUG=1`, или `kraube.EnableDevLog()` программно) включает подробные stderr-логи. При ошибке клиент эмитит одну строку `api: error response`, содержащую всё необходимое для разбора:
+
+- `method`, полный `url`, `status`, `elapsed`
+- `local_addr`, `remote_addr`, `proxy` — какой именно egress использовался
+- `request_headers` (с редактом `Authorization` / `Cookie`)
+- `request_body`, `response_headers`, `response_body` (каждое поле до 8 КБ)
+
+Для сетевых ошибок (когда соединение вообще не установилось) эмитится аналогичный `api: request failed` без блока ответа. Успешные запросы тоже логируют `local_addr` / `remote_addr` / `proxy` — удобно ловить ситуации, когда прокси «работает не с того IP».
+
+`APIError.Error()` всегда печатает HTTP-статус: `HTTP 403 forbidden: Request not allowed` — без флагов и без type assertion.
+
 ### Свой TokenProvider
 
 ```go

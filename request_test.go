@@ -69,7 +69,11 @@ func TestMessageResponse_HasToolUse(t *testing.T) {
 func TestAPIError_Error(t *testing.T) {
 	e := &APIError{Detail: APIErrorDetail{Type: "rate_limit_error", Message: "slow down"}}
 	if got := e.Error(); got != "rate_limit_error: slow down" {
-		t.Errorf("Error = %q", got)
+		t.Errorf("Error without status = %q", got)
+	}
+	e.Status = 429
+	if got := e.Error(); got != "HTTP 429 rate_limit_error: slow down" {
+		t.Errorf("Error with status = %q", got)
 	}
 }
 
