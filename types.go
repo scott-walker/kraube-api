@@ -102,9 +102,9 @@ type ContentBlock struct {
 	Input json.RawMessage `json:"input,omitempty"`
 
 	// tool_result
-	ToolUseID string  `json:"tool_use_id,omitempty"`
-	IsError   bool    `json:"is_error,omitempty"`
-	Content   Content `json:"content,omitempty"`
+	ToolUseID string   `json:"tool_use_id,omitempty"`
+	IsError   bool     `json:"is_error,omitempty"`
+	Content   *Content `json:"content,omitempty"`
 
 	// thinking
 	Thinking  string `json:"thinking,omitempty"`
@@ -154,7 +154,7 @@ func ToolResultBlock(toolUseID string, content Content, isError bool) ContentBlo
 	return ContentBlock{
 		Type:      "tool_result",
 		ToolUseID: toolUseID,
-		Content:   content,
+		Content:   &content,
 		IsError:   isError,
 	}
 }

@@ -1,6 +1,7 @@
 package kraube
 
 import (
+	"bytes"
 	"encoding/json"
 	"testing"
 )
@@ -128,6 +129,45 @@ func TestToolResultBlock(t *testing.T) {
 	b := ToolResultBlock("id1", TextContent("result"), false)
 	if b.Type != "tool_result" || b.ToolUseID != "id1" || b.IsError {
 		t.Errorf("ToolResultBlock = %+v", b)
+	}
+	if b.Content == nil || b.Content.Text != "result" {
+		t.Errorf("Content = %+v", b.Content)
+	}
+}
+
+// TestContentBlock_NoEmptyContent: блоки text и tool_use не должны
+// сериализовывать поле "content" — Anthropic API отвергает такие сообщения
+// с HTTP 400 ("Extra inputs are not permitted").
+func TestContentBlock_NoEmptyContent(t *testing.T) {
+	cases := []struct {
+		name  string
+		block ContentBlock
+	}{
+		{"text", TextBlock("hello")},
+		{"tool_use", ToolUseBlock("id1", "search", json.RawMessage(`{}`))},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			data, err := json.Marshal(tc.block)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if bytes.Contains(data, []byte(`"content"`)) {
+				t.Errorf("block %q must not include \"content\" field; got %s", tc.name, data)
+			}
+		})
+	}
+}
+
+// TestToolResultBlock_MarshalsContent: tool_result обязан включать "content".
+func TestToolResultBlock_MarshalsContent(t *testing.T) {
+	b := ToolResultBlock("id1", TextContent("result"), false)
+	data, err := json.Marshal(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(data, []byte(`"content":"result"`)) {
+		t.Errorf("tool_result must marshal content; got %s", data)
 	}
 }
 
