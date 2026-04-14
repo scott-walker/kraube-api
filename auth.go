@@ -244,7 +244,17 @@ func LoginManual(ctx context.Context, readCode func(authURL string) (string, err
 }
 
 // refreshAccessToken exchanges a refresh token for a new access token.
-func refreshAccessToken(ctx context.Context, refreshToken string) (*oauthTokens, error) {
+// The client argument controls which HTTP client performs the request —
+// when nil, falls back to the package-level authHTTPClient, which lets
+// standalone callers (LoginManual, FetchProfile, bare refreshAccessToken
+// invocations) keep using SetAuthHTTPClient. Token managers owned by a
+// *kraube.Client pass in that Client's per-instance HTTPClient so
+// WithProxy / WithHTTPClient apply to refresh the same way they apply
+// to /v1/messages.
+func refreshAccessToken(ctx context.Context, client *http.Client, refreshToken string) (*oauthTokens, error) {
+	if client == nil {
+		client = authHTTPClient
+	}
 	logDebug("oauth: refreshing access token", "token_url", oauthTokenURL)
 
 	body := map[string]string{
@@ -265,7 +275,7 @@ func refreshAccessToken(ctx context.Context, refreshToken string) (*oauthTokens,
 	req.Header.Set("Content-Type", "application/json")
 
 	start := time.Now()
-	resp, err := authHTTPClient.Do(req)
+	resp, err := client.Do(req)
 	elapsed := time.Since(start)
 
 	if err != nil {

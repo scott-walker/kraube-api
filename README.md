@@ -226,7 +226,7 @@ With `--debug` (or `kraube.EnableDevLog()`), every failing request emits a full 
 
 ### Proxy
 
-Kraube can route all API traffic — both `/v1/messages` and OAuth endpoints — through an HTTP, HTTPS, or SOCKS5 proxy. The Chrome TLS fingerprint is preserved end-to-end: the proxy only sees a plain TCP hop, and the uTLS handshake runs over the tunnel directly against `api.anthropic.com`.
+Kraube routes all traffic of a single Client instance — `/v1/messages`, the initial profile fetch, and OAuth token refresh — through a single transport. A single `WithProxy(...)` is enough; the library propagates the per-Client `HTTPClient` into the token manager, so refresh reuses the same tunnel. The Chrome TLS fingerprint is preserved end-to-end: the proxy only sees a plain TCP hop, and the uTLS handshake runs over the tunnel directly against `api.anthropic.com` and `platform.claude.com`.
 
 **Programmatic:**
 
@@ -256,7 +256,7 @@ client, _ := kraube.NewClient(ctx,
 
 Supported schemes: `http`, `https`, `socks5`, `socks5h`. Any other scheme is a hard error rather than a silent fallback. A bare `host:port` is tolerated and assumed to be `http://`.
 
-**Standalone auth calls** (`LoginManual`, `FetchProfile`) use a package-level HTTP client. Point it through a proxy with `SetAuthHTTPClient`:
+**Standalone auth calls without a Client instance** (`Login`, `LoginManual`, top-level `FetchProfile`) go through a package-level HTTP client. Point it through a proxy with `SetAuthHTTPClient`:
 
 ```go
 hc, _ := kraube.NewProxiedHTTPClient("http://proxy:8080")
@@ -265,7 +265,7 @@ kraube.SetAuthHTTPClient(hc)
 creds, _ := kraube.LoginManual(ctx, readCode)
 ```
 
-`NewProxiedHTTPClient("")` returns a client that follows `HTTPS_PROXY` / `ALL_PROXY` from the environment. Passing `nil` to `SetAuthHTTPClient` restores `http.DefaultClient`.
+`NewProxiedHTTPClient("")` returns a client that follows `HTTPS_PROXY` / `ALL_PROXY` from the environment. Passing `nil` to `SetAuthHTTPClient` restores `http.DefaultClient`. For the normal `kraube.NewClient(..., WithProxy(...))` path this helper is not required — refresh is already covered by `WithProxy`.
 
 **CLI:**
 

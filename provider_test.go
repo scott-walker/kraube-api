@@ -183,6 +183,82 @@ func TestEnvTokenManager_EmptyVar(t *testing.T) {
 	}
 }
 
+// countingRoundTripper wraps http.DefaultTransport and atomically counts
+// the number of requests passing through it. Used to verify that the
+// per-Client HTTPClient — not the package-level authHTTPClient — handles
+// OAuth refresh.
+type countingRoundTripper struct {
+	calls atomic.Int32
+	inner http.RoundTripper
+}
+
+func (c *countingRoundTripper) RoundTrip(r *http.Request) (*http.Response, error) {
+	c.calls.Add(1)
+	return c.inner.RoundTrip(r)
+}
+
+// TestNewClient_RefreshRoutesThroughHTTPClient verifies that after NewClient
+// resolves the per-Client HTTPClient, token refresh goes through it instead
+// of the package-level authHTTPClient. This is the regression test for the
+// v0.4.3 fix: prior versions routed refresh through http.DefaultClient,
+// causing 403s from regions where direct access to the OAuth endpoint is
+// blocked even though WithProxy was set on the Client.
+func TestNewClient_RefreshRoutesThroughHTTPClient(t *testing.T) {
+	server := newMockTokenServer(t, "access-via-client", "refresh-new")
+	defer server.Close()
+	withMockTokenURL(t, server)
+
+	// Sentinel client: every request passing through this transport is
+	// counted. If refresh ignored WithHTTPClient and fell back to the
+	// package global, the counter would stay at 0 and Token() would fail
+	// (the mock server is only routable via httptest's Transport in practice,
+	// but DefaultTransport also handles it over localhost — that's fine;
+	// the signal we care about is *which* RoundTripper handled the call).
+	rt := &countingRoundTripper{inner: http.DefaultTransport}
+	custom := &http.Client{Transport: rt}
+
+	// Make sure the package global is something that would obviously fail
+	// if the code accidentally used it — a nil Transport default client can't
+	// talk to the test server's scheme mismatch, but the simpler assertion
+	// is just "rt.calls > 0 after NewClient".
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	client, err := NewClient(ctx,
+		WithToken("seed-refresh-token"),
+		WithHTTPClient(custom),
+		WithoutProfile(),
+	)
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	if client.HTTPClient != custom {
+		t.Errorf("Client.HTTPClient was replaced; wanted the injected one")
+	}
+	if got := rt.calls.Load(); got < 1 {
+		t.Errorf("custom transport saw %d requests, want >= 1 (refresh should route through c.HTTPClient)", got)
+	}
+
+	// Force a second refresh by invalidating the in-memory access token and
+	// calling the provider directly. The counter must advance — proving the
+	// manager kept the per-Client HTTPClient, not just used it once.
+	tm, ok := client.Provider.(*tokenManager)
+	if !ok {
+		t.Fatalf("Provider is %T, want *tokenManager", client.Provider)
+	}
+	tm.mu.Lock()
+	tm.creds.ExpiresAt = 0
+	tm.mu.Unlock()
+
+	before := rt.calls.Load()
+	if _, err := tm.Token(ctx); err != nil {
+		t.Fatalf("second Token: %v", err)
+	}
+	if after := rt.calls.Load(); after <= before {
+		t.Errorf("second refresh did not route through custom transport: before=%d, after=%d", before, after)
+	}
+}
+
 func TestCallbackTokenProvider(t *testing.T) {
 	p := NewCallbackTokenProvider(func(ctx context.Context) (string, error) {
 		return "callback-token", nil

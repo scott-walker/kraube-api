@@ -3,6 +3,7 @@ package kraube
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 	"sync"
 	"time"
@@ -40,6 +41,21 @@ type tokenManager struct {
 
 	// Current state (mirrors file contents when path != "").
 	creds *Credentials
+
+	// HTTP client used for the OAuth refresh call. When nil, refreshAccessToken
+	// falls back to the package-level authHTTPClient. NewClient sets this to
+	// the per-instance c.HTTPClient so that WithProxy / WithHTTPClient apply
+	// to refresh automatically — no SetAuthHTTPClient dance required.
+	httpClient *http.Client
+}
+
+// setHTTPClient installs the HTTP client used for refresh calls. Called by
+// NewClient after the per-Client HTTPClient is constructed. Safe to call
+// before Token() is invoked; concurrent use is not expected at this stage.
+func (m *tokenManager) setHTTPClient(hc *http.Client) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.httpClient = hc
 }
 
 // newMemoryTokenManager constructs an in-memory tokenManager seeded with a refresh token.
@@ -90,7 +106,7 @@ func (m *tokenManager) refreshInMemory(ctx context.Context) (string, error) {
 	}
 
 	logDebug("provider: refreshing (in-memory)")
-	tokens, err := refreshAccessToken(ctx, m.creds.RefreshToken)
+	tokens, err := refreshAccessToken(ctx, m.httpClient, m.creds.RefreshToken)
 	if err != nil {
 		return "", fmt.Errorf("refresh token: %w", err)
 	}
@@ -124,7 +140,7 @@ func (m *tokenManager) refreshPersistent(ctx context.Context) (string, error) {
 	}
 
 	logDebug("provider: refreshing (persistent)", "path", m.path)
-	tokens, err := refreshAccessToken(ctx, onDisk.RefreshToken)
+	tokens, err := refreshAccessToken(ctx, m.httpClient, onDisk.RefreshToken)
 	if err != nil {
 		return "", fmt.Errorf("refresh token: %w", err)
 	}
@@ -158,14 +174,26 @@ func lockWithContext(ctx context.Context, lock *flock.Flock) error {
 // envTokenManager reads the refresh token from an environment variable and
 // delegates to an in-memory tokenManager. Rotation is not persisted.
 type envTokenManager struct {
-	mu     sync.Mutex
-	envVar string
-	token  string // last seen token value
-	inner  *tokenManager
+	mu         sync.Mutex
+	envVar     string
+	token      string // last seen token value
+	inner      *tokenManager
+	httpClient *http.Client // propagated to inner on (re)creation
 }
 
 func newEnvTokenManager(envVar string) *envTokenManager {
 	return &envTokenManager{envVar: envVar}
+}
+
+// setHTTPClient installs the HTTP client used for refresh and propagates it
+// to the inner tokenManager (if already created). Mirrors tokenManager.setHTTPClient.
+func (m *envTokenManager) setHTTPClient(hc *http.Client) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.httpClient = hc
+	if m.inner != nil {
+		m.inner.setHTTPClient(hc)
+	}
 }
 
 func (m *envTokenManager) Token(ctx context.Context) (string, error) {
@@ -180,6 +208,7 @@ func (m *envTokenManager) Token(ctx context.Context) (string, error) {
 	if m.inner == nil || token != m.token {
 		m.token = token
 		m.inner = newMemoryTokenManager(token)
+		m.inner.httpClient = m.httpClient
 	}
 	inner := m.inner
 	m.mu.Unlock()

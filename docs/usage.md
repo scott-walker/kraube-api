@@ -51,7 +51,7 @@ client, err := kraube.NewClient(ctx,
 
 ### Прокси
 
-Весь трафик (и `/v1/messages`, и OAuth-запросы профиля) можно направить через HTTP/HTTPS/SOCKS5 прокси. Chrome TLS fingerprint сохраняется: uTLS handshake идёт поверх туннеля напрямую до `api.anthropic.com`.
+Весь трафик инстанса Client'а — `/v1/messages`, начальный profile-fetch и OAuth token refresh — идёт через один и тот же транспорт. Достаточно одного `WithProxy(...)` при создании клиента. Chrome TLS fingerprint сохраняется: uTLS handshake идёт поверх туннеля напрямую до `api.anthropic.com` / `platform.claude.com`.
 
 ```go
 // Явный прокси. Логин/пароль в URL — это Basic proxy auth.
@@ -78,7 +78,7 @@ client, err := kraube.NewClient(ctx,
 
 Поддерживаемые схемы: `http`, `https`, `socks5`, `socks5h`. Любая другая схема — явная ошибка (чтобы не ходить «мимо прокси» по тихому). `host:port` без схемы интерпретируется как `http://`.
 
-Для standalone auth-вызовов (`LoginManual`, `FetchProfile`) используется отдельный пакетный HTTP-клиент. Чтобы направить и их через прокси:
+Для **standalone** auth-вызовов без инстанса Client'а (`Login`, `LoginManual`, top-level `FetchProfile`) используется отдельный пакетный HTTP-клиент. Чтобы направить и их через прокси:
 
 ```go
 hc, _ := kraube.NewProxiedHTTPClient("http://proxy:8080")
@@ -87,7 +87,7 @@ kraube.SetAuthHTTPClient(hc)
 creds, _ := kraube.LoginManual(ctx, readCode)
 ```
 
-`NewProxiedHTTPClient("")` вернёт клиент, который читает `HTTPS_PROXY` / `ALL_PROXY` из env. `SetAuthHTTPClient(nil)` возвращает дефолт.
+`NewProxiedHTTPClient("")` вернёт клиент, который читает `HTTPS_PROXY` / `ALL_PROXY` из env. `SetAuthHTTPClient(nil)` возвращает дефолт. Для обычного использования `kraube.NewClient(..., WithProxy(...))` этот вызов не нужен — refresh покрывается `WithProxy` автоматически.
 
 В CLI всё то же самое доступно через флаг `--proxy URL`, который применяется к любой подкоманде, включая `kraube login`:
 

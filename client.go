@@ -161,6 +161,18 @@ func NewClient(ctx context.Context, opts ...Option) (*Client, error) {
 
 	c.Provider = provider
 
+	// Route token refresh through the per-Client HTTPClient so WithProxy /
+	// WithHTTPClient apply to OAuth refresh the same way they apply to
+	// /v1/messages. Only our built-in token managers are wired — custom
+	// TokenProvider implementations supplied via WithTokenProvider remain
+	// the caller's responsibility.
+	switch p := provider.(type) {
+	case *tokenManager:
+		p.setHTTPClient(c.HTTPClient)
+	case *envTokenManager:
+		p.setHTTPClient(c.HTTPClient)
+	}
+
 	// Get initial access token.
 	accessToken, err := provider.Token(ctx)
 	if err != nil {

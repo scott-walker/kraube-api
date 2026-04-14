@@ -219,7 +219,7 @@ func TestRefreshAccessToken(t *testing.T) {
 	defer func() { setOAuthTokenURL(origURL) }()
 	setOAuthTokenURL(server.URL)
 
-	tokens, err := refreshAccessToken(context.Background(), "my-refresh")
+	tokens, err := refreshAccessToken(context.Background(), nil, "my-refresh")
 	if err != nil {
 		t.Fatalf("refreshAccessToken: %v", err)
 	}
@@ -248,7 +248,7 @@ func TestRefreshAccessToken_KeepsOldRefreshToken(t *testing.T) {
 	defer func() { setOAuthTokenURL(origURL) }()
 	setOAuthTokenURL(server.URL)
 
-	tokens, err := refreshAccessToken(context.Background(), "old-refresh")
+	tokens, err := refreshAccessToken(context.Background(), nil, "old-refresh")
 	if err != nil {
 		t.Fatalf("refreshAccessToken: %v", err)
 	}

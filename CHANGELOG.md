@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.4.3] - 2026-04-14
+
+### Fixed
+- **`WithProxy` now covers OAuth token refresh**, not just `/v1/messages` and the initial profile fetch. Previously the refresh call inside the built-in token managers (`WithToken`, `WithTokenFile`, `WithEnvToken`) went through the package-level `authHTTPClient` (defaulting to `http.DefaultClient`), which ignored the Client's proxy configuration and produced `HTTP 403` from regions where a direct connection to `platform.claude.com/v1/oauth/token` is blocked. After `NewClient` resolves the per-Client `HTTPClient`, it is now propagated into the token manager so every subsequent refresh reuses the same transport — a single `WithProxy(...)` call is enough to route all outbound traffic of a Client instance. Callers no longer need to pair `WithProxy` with `NewProxiedHTTPClient` + `SetAuthHTTPClient`. The package-level `SetAuthHTTPClient` / `authHTTPClient` remain in place for **standalone** auth helpers that run without a Client (`Login`, `LoginManual`, top-level `FetchProfile`).
+
+### Changed
+- `refreshAccessToken` is now parameterised by `*http.Client`. When `nil`, it falls back to the package-level `authHTTPClient` — preserving the previous behaviour for any direct caller — but all internal call sites pass the per-Client HTTPClient.
+- `tokenManager` and `envTokenManager` carry an `httpClient` field, populated by `NewClient`. `WithTokenProvider`-supplied providers remain the caller's responsibility: the wiring only applies to the library's built-in managers.
+
+## [0.4.2] - 2026-04-14
+
+### Fixed
+- `ContentBlock.Content` is now a pointer (`*Content`) so `omitempty` actually drops the field when it is not set. Previously `text` and `tool_use` blocks serialised an empty `content: ""` property, which Anthropic rejected with `HTTP 400 "Extra inputs are not permitted"`. `ToolResultBlock` still emits a non-empty `*Content`; regression coverage in `TestContentBlock_NoEmptyContent` and `TestToolResultBlock_MarshalsContent`.
+
 ## [0.4.1] - 2026-04-13
 
 ### Fixed
