@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.5.0] - 2026-05-16
+
+### Added
+- **CLI generation flags for `query` / `stream` / default `kraube "prompt"`.** The CLI previously dispatched only a single-turn user message with hardcoded `ModelSonnet4_6` and `MaxTokens=4096`; this made it unusable for downstream callers (Python voice agents, scripts) that need multi-turn context and per-call control over generation. The new flags map directly onto `MessageRequest` and leave existing behaviour unchanged when omitted:
+  - `--system TEXT` — inline system prompt (populates `MessageRequest.System` via `SystemText`).
+  - `--system-file PATH` — read the system prompt from a file (same target field as `--system`; the two are mutually exclusive in practice, last-wins by parse order).
+  - `--history PATH|-` — prior conversation as a JSON array `[{"role":"user|assistant","content":"..."}, ...]`. The literal `-` reads from stdin so callers can pipe history without temp files. The supplied prompt is appended as the final user message.
+  - `--model NAME` — override the model id (default remains `claude-sonnet-4-6`).
+  - `--max-tokens N` — response cap (default remains `4096`).
+  - `--temperature F` — sampling temperature; when omitted the library default is preserved.
+- **Token-level flush on `stream`.** `cmdStream` now calls `os.Stdout.Sync()` after every `text_delta`, so callers reading stdout chunk-by-chunk (typical Python subprocess pattern for voice pipelines) see each token as it lands instead of waiting for a full stdio buffer flush.
+
+### Changed
+- `cmdQuery` and `cmdStream` now accept a `genFlags` value and route through a new `buildRequest` helper. The default invocation (`kraube "prompt"`, no new flags) produces the exact same `MessageRequest` as before — `Model=ModelSonnet4_6`, `MaxTokens=4096`, single `UserMessage` — so existing scripts keep working without changes.
+
 ## [0.4.3] - 2026-04-14
 
 ### Fixed

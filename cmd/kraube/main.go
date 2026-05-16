@@ -3,8 +3,11 @@ package main
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -36,6 +39,10 @@ func main() {
 		}
 	}
 
+	// Generation flags — apply to query/stream/default (the "send a message" path).
+	// Parsed before command dispatch so they are stripped from os.Args.
+	genOpts := parseGenFlags()
+
 	if len(os.Args) < 2 {
 		fmt.Fprintln(os.Stderr, "Usage:")
 		fmt.Fprintln(os.Stderr, "  kraube login [--out PATH]  — authenticate via browser")
@@ -43,12 +50,23 @@ func main() {
 		fmt.Fprintln(os.Stderr, "  kraube \"your prompt\"       — send a message")
 		fmt.Fprintln(os.Stderr, "  kraube stream \"prompt\"     — stream response")
 		fmt.Fprintln(os.Stderr, "")
-		fmt.Fprintln(os.Stderr, "Flags:")
+		fmt.Fprintln(os.Stderr, "Global flags:")
 		fmt.Fprintln(os.Stderr, "  --debug                    — verbose logging (or KRAUBE_DEBUG=1)")
 		fmt.Fprintln(os.Stderr, "  --out PATH                 — credentials file path (login only)")
 		fmt.Fprintln(os.Stderr, "  --proxy URL                — route all traffic through proxy")
 		fmt.Fprintln(os.Stderr, "                               schemes: http, https, socks5, socks5h")
 		fmt.Fprintln(os.Stderr, "                               (falls back to HTTPS_PROXY/ALL_PROXY env)")
+		fmt.Fprintln(os.Stderr, "")
+		fmt.Fprintln(os.Stderr, "Generation flags (query / stream / default):")
+		fmt.Fprintln(os.Stderr, "  --system TEXT              — system prompt as inline text")
+		fmt.Fprintln(os.Stderr, "  --system-file PATH         — system prompt read from a file")
+		fmt.Fprintln(os.Stderr, "  --history PATH|-           — prior messages as JSON array")
+		fmt.Fprintln(os.Stderr, "                               (file path, or \"-\" to read from stdin)")
+		fmt.Fprintln(os.Stderr, "                               format: [{\"role\":\"user|assistant\",")
+		fmt.Fprintln(os.Stderr, "                                         \"content\":\"...\"}, ...]")
+		fmt.Fprintln(os.Stderr, "  --model NAME               — model id (default claude-sonnet-4-6)")
+		fmt.Fprintln(os.Stderr, "  --max-tokens N             — response cap in tokens (default 4096)")
+		fmt.Fprintln(os.Stderr, "  --temperature F            — sampling temperature 0.0..1.0")
 		fmt.Fprintln(os.Stderr, "")
 		fmt.Fprintln(os.Stderr, "Env:")
 		fmt.Fprintln(os.Stderr, "  KRAUBE_CREDENTIALS_PATH    — override credentials file path globally")
@@ -68,10 +86,121 @@ func main() {
 			fmt.Fprintln(os.Stderr, "Usage: kraube stream \"prompt\"")
 			os.Exit(1)
 		}
-		cmdStream(ctx, strings.Join(os.Args[2:], " "))
+		cmdStream(ctx, strings.Join(os.Args[2:], " "), genOpts)
 	default:
-		cmdQuery(ctx, strings.Join(os.Args[1:], " "))
+		cmdQuery(ctx, strings.Join(os.Args[1:], " "), genOpts)
 	}
+}
+
+// genFlags holds optional generation parameters parsed from the CLI.
+// Zero values mean "use library defaults".
+type genFlags struct {
+	system       string
+	systemSet    bool          // true if --system or --system-file was provided
+	history      []kraube.Message
+	model        string        // empty = ModelSonnet4_6
+	maxTokens    int           // 0 = 4096
+	temperature  *float64      // nil = library default
+}
+
+// parseGenFlags reads --system / --system-file / --history / --model /
+// --max-tokens / --temperature out of os.Args and returns the resolved
+// values. Flags are stripped from os.Args so command dispatch keeps working
+// against just the positional arguments.
+//
+// Fails the process on parse errors (unreadable history file, malformed JSON,
+// invalid number) so the user sees the problem immediately rather than a
+// surprising API response.
+func parseGenFlags() genFlags {
+	var g genFlags
+
+	if v := flagValue("--system"); v != "" {
+		g.system = v
+		g.systemSet = true
+	}
+	if v := flagValue("--system-file"); v != "" {
+		data, err := os.ReadFile(v)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to read --system-file: %v\n", err)
+			os.Exit(1)
+		}
+		g.system = string(data)
+		g.systemSet = true
+	}
+
+	if v := flagValue("--history"); v != "" {
+		var raw []byte
+		var err error
+		if v == "-" {
+			raw, err = io.ReadAll(os.Stdin)
+		} else {
+			raw, err = os.ReadFile(v)
+		}
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to read --history: %v\n", err)
+			os.Exit(1)
+		}
+		if len(raw) > 0 {
+			var msgs []kraube.Message
+			if err := json.Unmarshal(raw, &msgs); err != nil {
+				fmt.Fprintf(os.Stderr, "Failed to parse --history JSON: %v\n", err)
+				os.Exit(1)
+			}
+			g.history = msgs
+		}
+	}
+
+	if v := flagValue("--model"); v != "" {
+		g.model = v
+	}
+	if v := flagValue("--max-tokens"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n <= 0 {
+			fmt.Fprintf(os.Stderr, "Invalid --max-tokens: %q (must be positive integer)\n", v)
+			os.Exit(1)
+		}
+		g.maxTokens = n
+	}
+	if v := flagValue("--temperature"); v != "" {
+		f, err := strconv.ParseFloat(v, 64)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Invalid --temperature: %q\n", v)
+			os.Exit(1)
+		}
+		g.temperature = kraube.Float64(f)
+	}
+
+	return g
+}
+
+// buildRequest assembles a MessageRequest from the user-supplied prompt and
+// the resolved generation flags. The prompt is appended as the final user
+// message; --history messages (if any) come first; --system populates
+// MessageRequest.System.
+func buildRequest(prompt string, g genFlags) *kraube.MessageRequest {
+	model := g.model
+	if model == "" {
+		model = kraube.ModelSonnet4_6
+	}
+	maxTokens := g.maxTokens
+	if maxTokens == 0 {
+		maxTokens = 4096
+	}
+
+	messages := make([]kraube.Message, 0, len(g.history)+1)
+	messages = append(messages, g.history...)
+	messages = append(messages, kraube.UserMessage(prompt))
+
+	req := &kraube.MessageRequest{
+		Model:       model,
+		MaxTokens:   maxTokens,
+		Messages:    messages,
+		Temperature: g.temperature,
+	}
+	if g.systemSet {
+		req.System = kraube.SystemText(g.system)
+	}
+	return req
 }
 
 func cmdLogin(ctx context.Context) {
@@ -202,14 +331,10 @@ func formatClaim(claim string) string {
 	}
 }
 
-func cmdQuery(ctx context.Context, prompt string) {
+func cmdQuery(ctx context.Context, prompt string, g genFlags) {
 	client := mustClient(ctx)
 
-	resp, err := client.Messages.Create(ctx, &kraube.MessageRequest{
-		Model:     kraube.ModelSonnet4_6,
-		MaxTokens: 4096,
-		Messages:  []kraube.Message{kraube.UserMessage(prompt)},
-	})
+	resp, err := client.Messages.Create(ctx, buildRequest(prompt, g))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
@@ -218,14 +343,10 @@ func cmdQuery(ctx context.Context, prompt string) {
 	fmt.Println(resp.Text())
 }
 
-func cmdStream(ctx context.Context, prompt string) {
+func cmdStream(ctx context.Context, prompt string, g genFlags) {
 	client := mustClient(ctx)
 
-	stream, err := client.Messages.Stream(ctx, &kraube.MessageRequest{
-		Model:     kraube.ModelSonnet4_6,
-		MaxTokens: 4096,
-		Messages:  []kraube.Message{kraube.UserMessage(prompt)},
-	})
+	stream, err := client.Messages.Stream(ctx, buildRequest(prompt, g))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
@@ -236,6 +357,9 @@ func cmdStream(ctx context.Context, prompt string) {
 		if evt, ok := stream.Event().(*kraube.ContentBlockDeltaEvent); ok {
 			if evt.Delta.Type == "text_delta" {
 				fmt.Print(evt.Delta.Text)
+				// Flush так чтобы caller (например Python subprocess) видел
+				// токены сразу, а не дожидался полного буфера stdout.
+				_ = os.Stdout.Sync()
 			}
 		}
 	}
