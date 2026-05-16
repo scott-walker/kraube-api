@@ -226,7 +226,7 @@ With `--debug` (or `kraube.EnableDevLog()`), every failing request emits a full 
 
 ### Proxy
 
-Kraube routes all traffic of a single Client instance — `/v1/messages`, the initial profile fetch, and OAuth token refresh — through a single transport. A single `WithProxy(...)` is enough; the library propagates the per-Client `HTTPClient` into the token manager, so refresh reuses the same tunnel. The Chrome TLS fingerprint is preserved end-to-end: the proxy only sees a plain TCP hop, and the uTLS handshake runs over the tunnel directly against `api.anthropic.com` and `platform.claude.com`.
+Kraube API routes all traffic of a single Client instance — `/v1/messages`, the initial profile fetch, and OAuth token refresh — through a single transport. A single `WithProxy(...)` is enough; the library propagates the per-Client `HTTPClient` into the token manager, so refresh reuses the same tunnel. The Chrome TLS fingerprint is preserved end-to-end: the proxy only sees a plain TCP hop, and the uTLS handshake runs over the tunnel directly against `api.anthropic.com` and `platform.claude.com`.
 
 **Programmatic:**
 

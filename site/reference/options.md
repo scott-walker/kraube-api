@@ -23,7 +23,7 @@ All options for `kraube.NewClient(ctx, ...Option)`.
 
 | Function | Description |
 |----------|-------------|
-| `NewProxiedHTTPClient(url)` | Build an `*http.Client` with Kraube's Chrome-fingerprinted transport + proxy. Pass `""` to honor `HTTPS_PROXY`/`ALL_PROXY` env. |
+| `NewProxiedHTTPClient(url)` | Build an `*http.Client` with the Kraube API Chrome-fingerprinted transport + proxy. Pass `""` to honor `HTTPS_PROXY`/`ALL_PROXY` env. |
 | `SetAuthHTTPClient(c)` | Install a package-level HTTP client used by **standalone** OAuth helpers that run without a Client instance (`Login`, `LoginManual`, top-level `FetchProfile`). Pass `nil` to restore `http.DefaultClient`. Not needed when `kraube.NewClient(..., WithProxy(...))` is used — per-instance refresh already uses the proxy. |
 
 ## Behavior
