@@ -97,7 +97,7 @@
 - `LICENSE` (MIT)
 
 ### Changed
-- Rebranded from `kraube-go/kraube` to `scott-walker/kraube-api` (Kraube API)
+- Renamed module path to `github.com/scott-walker/kraube-api` (Kraube API)
 - Removed API key support — OAuth-only by design
 - Removed `NewClientOAuth`, `NewClientFromClaude`, `NewClientAPIKey` constructors
 - Removed `AuthMode`, `AuthAPIKey` types
