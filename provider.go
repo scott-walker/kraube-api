@@ -139,6 +139,17 @@ func (m *tokenManager) refreshPersistent(ctx context.Context) (string, error) {
 		return m.creds.AccessToken, nil
 	}
 
+	// Refuse to rotate when the file cannot be written back. The refresh
+	// token is single-use on the server side: a successful refresh whose
+	// result is not persisted silently invalidates the on-disk token for
+	// every other process sharing the file (observed with a read-only
+	// container bind mount). Fail loudly before touching the OAuth endpoint.
+	if f, err := os.OpenFile(m.path, os.O_WRONLY, 0); err != nil {
+		return "", fmt.Errorf("credentials file %s is not writable, refusing to refresh (rotated token would be lost): %w", m.path, err)
+	} else {
+		_ = f.Close()
+	}
+
 	logDebug("provider: refreshing (persistent)", "path", m.path)
 	tokens, err := refreshAccessToken(ctx, m.httpClient, onDisk.RefreshToken)
 	if err != nil {

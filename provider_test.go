@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -269,5 +271,47 @@ func TestCallbackTokenProvider(t *testing.T) {
 	}
 	if got != "callback-token" {
 		t.Errorf("Token = %q, want callback-token", got)
+	}
+}
+
+// TestFileTokenManager_RefusesRotationWhenReadOnly: a credentials file that
+// cannot be written back must fail BEFORE the OAuth endpoint is called —
+// otherwise the single-use refresh token is burned and its rotated
+// replacement is lost for every process sharing the file.
+func TestFileTokenManager_RefusesRotationWhenReadOnly(t *testing.T) {
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"access_token": "access-1",
+			"expires_in":   3600,
+		})
+	}))
+	defer server.Close()
+	withMockTokenURL(t, server)
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "credentials.json")
+	if err := SaveCredentials(path, &Credentials{RefreshToken: "original-refresh"}); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	if err := os.Chmod(path, 0400); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
+	if f, err := os.OpenFile(path, os.O_WRONLY, 0); err == nil {
+		_ = f.Close()
+		t.Skip("file is writable despite 0400 (running as root?)")
+	}
+
+	m, err := newFileTokenManager(path)
+	if err != nil {
+		t.Fatalf("newFileTokenManager: %v", err)
+	}
+	_, err = m.Token(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "not writable") {
+		t.Fatalf("Token error = %v, want 'not writable'", err)
+	}
+	if c := calls.Load(); c != 0 {
+		t.Errorf("OAuth endpoint called %d times, want 0 (token must not be burned)", c)
 	}
 }

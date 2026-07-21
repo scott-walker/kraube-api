@@ -377,7 +377,11 @@ func mustClient(ctx context.Context) *kraube.Client {
 	}
 	client, err := kraube.NewClient(ctx, opts...)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Not authenticated. Run: kraube login\n")
+		// "Run: kraube login" is only honest advice when the credentials are
+		// actually absent/dead — a network hiccup or an unwritable file must
+		// not push the user into a pointless re-login.
+		fmt.Fprintf(os.Stderr, "Not authenticated: %v\n", err)
+		fmt.Fprintf(os.Stderr, "If credentials are missing or revoked, run: kraube login\n")
 		os.Exit(1)
 	}
 	return client
