@@ -515,7 +515,7 @@ func TestServer_KeepaliveProactiveRefresh(t *testing.T) {
 	if creds.AccessToken != "access-rotated" {
 		t.Errorf("on-disk accessToken = %q, want access-rotated", creds.AccessToken)
 	}
-	if remaining := time.UnixMilli(creds.ExpiresAt).Sub(time.Now()); remaining < 50*time.Minute {
+	if remaining := time.Until(time.UnixMilli(creds.ExpiresAt)); remaining < 50*time.Minute {
 		t.Errorf("on-disk expiresAt only %s away, want ~1h", remaining)
 	}
 
