@@ -66,10 +66,23 @@ type Credentials struct {
 // IsAccessLive reports whether the stored access token is still valid
 // with a 60-second safety margin.
 func (c *Credentials) IsAccessLive() bool {
+	return c.LiveFor(accessTokenMargin)
+}
+
+// accessTokenMargin is the default safety margin applied before expiresAt.
+// A token inside this window is treated as dead so in-flight requests never
+// race the actual server-side expiry.
+const accessTokenMargin = 60 * time.Second
+
+// LiveFor reports whether the stored access token remains valid for at
+// least the given margin. Callers that need a token to survive a long
+// operation (or want to refresh proactively, like `kraube serve`) pass a
+// larger margin than the default 60 seconds.
+func (c *Credentials) LiveFor(margin time.Duration) bool {
 	if c == nil || c.AccessToken == "" {
 		return false
 	}
-	return time.Now().UnixMilli() < c.ExpiresAt-60_000
+	return time.Now().UnixMilli() < c.ExpiresAt-margin.Milliseconds()
 }
 
 // oauthTokens is the internal representation returned by the OAuth endpoints.
@@ -442,10 +455,10 @@ func exchangeCode(ctx context.Context, code, verifier, redirectURI, state string
 
 // Profile holds account info from the OAuth profile endpoint.
 type Profile struct {
-	AccountUUID    string `json:"account_uuid"`
+	AccountUUID      string `json:"account_uuid"`
 	OrganizationUUID string `json:"organization_uuid"`
-	DisplayName    string `json:"display_name"`
-	Email          string `json:"email"`
+	DisplayName      string `json:"display_name"`
+	Email            string `json:"email"`
 }
 
 // FetchProfile retrieves the user's profile using an OAuth access token.

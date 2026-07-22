@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/scott-walker/kraube-api"
@@ -49,6 +51,13 @@ func main() {
 		fmt.Fprintln(os.Stderr, "  kraube usage               — show plan usage limits")
 		fmt.Fprintln(os.Stderr, "  kraube \"your prompt\"       — send a message")
 		fmt.Fprintln(os.Stderr, "  kraube stream \"prompt\"     — stream response")
+		fmt.Fprintln(os.Stderr, "  kraube serve               — local HTTP daemon (proxy + token keepalive)")
+		fmt.Fprintln(os.Stderr, "")
+		fmt.Fprintln(os.Stderr, "Serve flags:")
+		fmt.Fprintln(os.Stderr, "  --listen ADDR              — listen address (default 127.0.0.1:8787)")
+		fmt.Fprintln(os.Stderr, "  --auth-key KEY             — require Bearer/x-api-key auth (or KRAUBE_SERVE_KEY)")
+		fmt.Fprintln(os.Stderr, "                               mandatory when ADDR is not loopback")
+		fmt.Fprintln(os.Stderr, "  --refresh-margin DURATION  — refresh token this long before expiry (default 10m)")
 		fmt.Fprintln(os.Stderr, "")
 		fmt.Fprintln(os.Stderr, "Global flags:")
 		fmt.Fprintln(os.Stderr, "  --debug                    — verbose logging (or KRAUBE_DEBUG=1)")
@@ -81,6 +90,8 @@ func main() {
 		cmdLogin(ctx)
 	case "usage":
 		cmdUsage(ctx)
+	case "serve":
+		cmdServe(ctx)
 	case "stream":
 		if len(os.Args) < 3 {
 			fmt.Fprintln(os.Stderr, "Usage: kraube stream \"prompt\"")
@@ -95,12 +106,12 @@ func main() {
 // genFlags holds optional generation parameters parsed from the CLI.
 // Zero values mean "use library defaults".
 type genFlags struct {
-	system       string
-	systemSet    bool          // true if --system or --system-file was provided
-	history      []kraube.Message
-	model        string        // empty = ModelSonnet4_6
-	maxTokens    int           // 0 = 4096
-	temperature  *float64      // nil = library default
+	system      string
+	systemSet   bool // true if --system or --system-file was provided
+	history     []kraube.Message
+	model       string   // empty = ModelSonnet4_6
+	maxTokens   int      // 0 = 4096
+	temperature *float64 // nil = library default
 }
 
 // parseGenFlags reads --system / --system-file / --history / --model /
@@ -329,6 +340,53 @@ func formatClaim(claim string) string {
 	default:
 		return claim
 	}
+}
+
+// cmdServe runs the local HTTP daemon: a proxy to the Anthropic Messages
+// API with a background token keepalive. Intended to run permanently (e.g.
+// under systemd — see deploy/kraube-serve.service) as the single owner of
+// the credentials file, so short-lived callers never race the single-use
+// refresh token.
+func cmdServe(ctx context.Context) {
+	cfg := kraube.ServerConfig{
+		Addr:    flagValue("--listen"),
+		AuthKey: flagValue("--auth-key"),
+	}
+	if cfg.AuthKey == "" {
+		cfg.AuthKey = os.Getenv("KRAUBE_SERVE_KEY")
+	}
+	if v := flagValue("--refresh-margin"); v != "" {
+		d, err := time.ParseDuration(v)
+		if err != nil || d <= 0 {
+			fmt.Fprintf(os.Stderr, "Invalid --refresh-margin: %q (want a positive duration like 10m)\n", v)
+			os.Exit(1)
+		}
+		cfg.RefreshMargin = d
+	}
+
+	client := mustClient(ctx)
+
+	srv, err := kraube.NewServer(client, cfg)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Graceful shutdown on SIGINT/SIGTERM: stop the keepalive, drain
+	// in-flight requests (10s window inside Run), then exit cleanly.
+	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	if err := srv.Start(); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Printf("kraube serve listening on http://%s\n", srv.Addr())
+	if err := srv.Wait(ctx); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Println("kraube serve stopped")
 }
 
 func cmdQuery(ctx context.Context, prompt string, g genFlags) {

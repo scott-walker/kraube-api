@@ -19,6 +19,19 @@ type TokenProvider interface {
 	Token(ctx context.Context) (string, error)
 }
 
+// refreshableProvider is the optional internal contract implemented by the
+// built-in token managers. It powers Client.EnsureFresh / Client.AccessExpiry
+// (and through them the `kraube serve` keepalive) without widening the public
+// TokenProvider interface: custom providers keep their one-method contract
+// and simply degrade to lazy refresh.
+type refreshableProvider interface {
+	// ensureFresh refreshes when the access token expires within margin.
+	ensureFresh(ctx context.Context, margin time.Duration) error
+	// expiry reports the current access token's expiresAt (ok=false when
+	// no access token is held yet).
+	expiry() (time.Time, bool)
+}
+
 // --- Built-in providers ---
 
 // tokenManager manages the OAuth access token lifecycle.
@@ -88,20 +101,53 @@ func (m *tokenManager) Token(ctx context.Context) (string, error) {
 
 	// Slow path: need a refresh.
 	if m.path == "" {
-		return m.refreshInMemory(ctx)
+		return m.refreshInMemory(ctx, accessTokenMargin)
 	}
-	return m.refreshPersistent(ctx)
+	return m.refreshPersistent(ctx, accessTokenMargin)
+}
+
+// ensureFresh refreshes the access token when it expires within margin.
+// Unlike Token — which only refreshes inside the fixed 60-second window —
+// this lets a caller force rotation well ahead of expiry. `kraube serve`
+// uses it from its background keepalive so the token on disk never gets
+// close to actually expiring. No-op when the token already outlives margin.
+func (m *tokenManager) ensureFresh(ctx context.Context, margin time.Duration) error {
+	m.mu.Lock()
+	live := m.creds.LiveFor(margin)
+	m.mu.Unlock()
+	if live {
+		return nil
+	}
+	var err error
+	if m.path == "" {
+		_, err = m.refreshInMemory(ctx, margin)
+	} else {
+		_, err = m.refreshPersistent(ctx, margin)
+	}
+	return err
+}
+
+// expiry reports the expiresAt of the current access token. ok is false
+// when no access token is held yet (fresh manager before the first refresh).
+func (m *tokenManager) expiry() (time.Time, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.creds == nil || m.creds.AccessToken == "" {
+		return time.Time{}, false
+	}
+	return time.UnixMilli(m.creds.ExpiresAt), true
 }
 
 // refreshInMemory performs a refresh without cross-process synchronization.
 // Used when no credentials file is bound — the rotated refresh token lives
-// only for the lifetime of this process.
-func (m *tokenManager) refreshInMemory(ctx context.Context) (string, error) {
+// only for the lifetime of this process. The margin controls the re-check
+// under the lock: a token that outlives margin is reused instead of rotated.
+func (m *tokenManager) refreshInMemory(ctx context.Context, margin time.Duration) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	// Re-check under the lock — another goroutine may have refreshed.
-	if m.creds.IsAccessLive() {
+	if m.creds.LiveFor(margin) {
 		return m.creds.AccessToken, nil
 	}
 
@@ -116,8 +162,9 @@ func (m *tokenManager) refreshInMemory(ctx context.Context) (string, error) {
 
 // refreshPersistent performs a refresh under an exclusive file lock.
 // After acquiring the lock, the file is re-read — another process may have
-// already rotated the token, in which case we simply reuse its result.
-func (m *tokenManager) refreshPersistent(ctx context.Context) (string, error) {
+// already rotated the token, in which case we simply reuse its result
+// (as long as it outlives the requested margin).
+func (m *tokenManager) refreshPersistent(ctx context.Context, margin time.Duration) (string, error) {
 	lock := flock.New(m.path + ".lock")
 	if err := lockWithContext(ctx, lock); err != nil {
 		return "", fmt.Errorf("acquire credentials lock: %w", err)
@@ -133,7 +180,7 @@ func (m *tokenManager) refreshPersistent(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("reload credentials: %w", err)
 	}
 
-	if onDisk.IsAccessLive() {
+	if onDisk.LiveFor(margin) {
 		logDebug("provider: reused access token from disk (another process refreshed)")
 		m.creds = onDisk
 		return m.creds.AccessToken, nil
@@ -207,12 +254,14 @@ func (m *envTokenManager) setHTTPClient(hc *http.Client) {
 	}
 }
 
-func (m *envTokenManager) Token(ctx context.Context) (string, error) {
+// resolveInner reads the env var and returns the inner tokenManager,
+// recreating it when the variable value changed since the last call.
+func (m *envTokenManager) resolveInner() (*tokenManager, error) {
 	m.mu.Lock()
+	defer m.mu.Unlock()
 	token := os.Getenv(m.envVar)
 	if token == "" {
-		m.mu.Unlock()
-		return "", fmt.Errorf("environment variable %s is not set", m.envVar)
+		return nil, fmt.Errorf("environment variable %s is not set", m.envVar)
 	}
 
 	// If token changed, create a new inner manager.
@@ -221,10 +270,35 @@ func (m *envTokenManager) Token(ctx context.Context) (string, error) {
 		m.inner = newMemoryTokenManager(token)
 		m.inner.httpClient = m.httpClient
 	}
+	return m.inner, nil
+}
+
+func (m *envTokenManager) Token(ctx context.Context) (string, error) {
+	inner, err := m.resolveInner()
+	if err != nil {
+		return "", err
+	}
+	return inner.Token(ctx)
+}
+
+// ensureFresh delegates the proactive refresh to the inner tokenManager.
+func (m *envTokenManager) ensureFresh(ctx context.Context, margin time.Duration) error {
+	inner, err := m.resolveInner()
+	if err != nil {
+		return err
+	}
+	return inner.ensureFresh(ctx, margin)
+}
+
+// expiry reports the current access token expiry from the inner manager.
+func (m *envTokenManager) expiry() (time.Time, bool) {
+	m.mu.Lock()
 	inner := m.inner
 	m.mu.Unlock()
-
-	return inner.Token(ctx)
+	if inner == nil {
+		return time.Time{}, false
+	}
+	return inner.expiry()
 }
 
 // CallbackTokenProvider wraps a user-supplied function as a TokenProvider.

@@ -1,0 +1,56 @@
+# kraube serve — local Anthropic Messages API gateway with token keepalive.
+#
+# System-wide install (runs as a dedicated user):
+#
+#   sudo cp deploy/kraube-serve.service /etc/systemd/system/
+#   # edit User=/Group= and KRAUBE_CREDENTIALS_PATH below, then:
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now kraube-serve
+#
+# Per-user install (credentials in ~/.config/kraube — the usual case):
+#
+#   mkdir -p ~/.config/systemd/user
+#   cp deploy/kraube-serve.service ~/.config/systemd/user/
+#   # remove the User=/Group= lines below, then:
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now kraube-serve
+#   loginctl enable-linger $USER   # keep it running after logout
+#
+# Health check: curl http://127.0.0.1:8787/healthz
+
+[Unit]
+Description=Kraube API serve (Anthropic Messages API gateway + OAuth token keepalive)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+# The daemon must be the sole owner of the credentials file: the refresh
+# token is single-use, so exactly one long-lived process should rotate it.
+ExecStart=/usr/local/bin/kraube serve --listen 127.0.0.1:8787
+Restart=always
+RestartSec=5
+
+# --- System-wide install only: run as the user owning the credentials.
+# Remove these two lines for a `systemctl --user` unit.
+User=kraube
+Group=kraube
+
+# Override the credentials location if it is not in the service user's
+# ~/.config/kraube/credentials.json:
+#Environment=KRAUBE_CREDENTIALS_PATH=/etc/kraube/credentials.json
+
+# Require an auth key (mandatory when --listen is not loopback):
+#Environment=KRAUBE_SERVE_KEY=change-me
+
+# Hardening — the daemon only needs the network and its config directory.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+# Allow writing rotated credentials + rate-limit cache. Adjust if you use
+# KRAUBE_CREDENTIALS_PATH outside the home directory.
+ReadWritePaths=%h/.config/kraube
+
+[Install]
+# For a `systemctl --user` unit use `WantedBy=default.target` instead.
+WantedBy=multi-user.target

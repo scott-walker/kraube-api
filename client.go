@@ -76,7 +76,7 @@ type Client struct {
 
 	// Auth (OAuth only — subscription-based access via claude.ai).
 	Provider    TokenProvider // token source
-	accessToken string       // current access token, updated by ensureAuth
+	accessToken string        // current access token, updated by ensureAuth
 
 	// OAuth profile (fetched on init for metadata.user_id).
 	Profile   *Profile
@@ -249,6 +249,37 @@ func (c *Client) ensureAuth(ctx context.Context) error {
 	return nil
 }
 
+// EnsureFresh proactively refreshes the access token when it expires within
+// margin. The built-in token managers (WithToken, WithTokenFile, WithEnvToken)
+// normally refresh lazily, only inside a 60-second window before expiry;
+// long-lived processes like `kraube serve` call EnsureFresh from a background
+// loop with a larger margin so the token is rotated well ahead of time and
+// requests never pay the refresh latency (or hit a dead token).
+//
+// For custom TokenProvider implementations there is no expiry contract, so
+// EnsureFresh degrades to a plain Token() call — the provider applies its own
+// refresh policy.
+func (c *Client) EnsureFresh(ctx context.Context, margin time.Duration) error {
+	if c.Provider == nil {
+		return nil
+	}
+	if rp, ok := c.Provider.(refreshableProvider); ok {
+		return rp.ensureFresh(ctx, margin)
+	}
+	_, err := c.Provider.Token(ctx)
+	return err
+}
+
+// AccessExpiry reports when the current access token expires. ok is false
+// when the provider does not expose expiry (custom TokenProvider) or no
+// access token has been obtained yet.
+func (c *Client) AccessExpiry() (expiresAt time.Time, ok bool) {
+	if rp, isBuiltin := c.Provider.(refreshableProvider); isBuiltin {
+		return rp.expiry()
+	}
+	return time.Time{}, false
+}
+
 // injectMetadata adds metadata.user_id for OAuth clients if not already set.
 func (c *Client) injectMetadata(req *MessageRequest) {
 	if c.Profile == nil {
@@ -377,6 +408,31 @@ func (s *MessagesService) Stream(ctx context.Context, req *MessageRequest) (*Str
 
 	logDebug("stream: connected")
 	return newStreamReader(resp.Body), nil
+}
+
+// Raw sends a message request and returns the raw upstream *http.Response
+// without decoding it — status, headers, and body bytes are the server's,
+// untouched. All OAuth injection required by the subscription gate (identity
+// preamble, billing header, metadata.user_id, model-specific beta headers)
+// is applied exactly as in Create/Stream; without it the API answers 403/429.
+//
+// req.Stream is preserved as-is, so a caller proxying a client-supplied body
+// (like `kraube serve`) passes both streaming SSE and plain JSON responses
+// through byte-for-byte without re-parsing events. The caller owns resp.Body
+// and must Close it.
+func (s *MessagesService) Raw(ctx context.Context, req *MessageRequest) (*http.Response, error) {
+	s.client.prepareRequest(req)
+	logDebug("messages: raw", "model", req.Model, "stream", req.Stream, "messages", len(req.Messages))
+	return s.client.doWithModel(ctx, http.MethodPost, "/v1/messages", req.Model, req)
+}
+
+// CountTokensRaw sends a count_tokens request and returns the raw upstream
+// *http.Response. Mirrors CountTokens (which performs no system-prefix or
+// metadata injection — the endpoint does not require them) but leaves
+// decoding to the caller, who owns resp.Body.
+func (s *MessagesService) CountTokensRaw(ctx context.Context, req *CountTokensRequest) (*http.Response, error) {
+	logDebug("messages: count_tokens raw", "model", req.Model, "messages", len(req.Messages))
+	return s.client.doWithModel(ctx, http.MethodPost, "/v1/messages/count_tokens", req.Model, req)
 }
 
 // CountTokens counts tokens for a message request without sending it.
