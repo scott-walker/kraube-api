@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.6.0] - 2026-07-22
+
+### Added
+- **`kraube serve` — a long-lived local HTTP daemon** (new `Server` type in the library, `serve` subcommand in the CLI). One permanently running process becomes the sole owner of `credentials.json`, refreshes the OAuth token proactively in the background so it never approaches expiry, and exposes the Messages API over plain HTTP on localhost for any process on the machine. Endpoints:
+  - `POST /v1/messages` — proxy to Anthropic. The body is decoded into a `MessageRequest` so the full OAuth injection pipeline (identity preamble, billing header, `metadata.user_id`, model-specific beta headers) applies. The upstream response is passed through verbatim: for `"stream": true` bodies that means raw SSE bytes copied chunk-by-chunk with a `Flush` after every read — no event re-parsing.
+  - `POST /v1/messages/count_tokens` — proxy, same pass-through semantics.
+  - `GET /healthz` — token liveness, expiry, last background refresh time/result, uptime. `503` only when the token is dead **and** the last refresh failed. Unauthenticated by design.
+  - `GET /usage` — cached subscription rate-limit windows. Never makes a paid upstream probe; empty cache yields `404`.
+- **Background token keepalive.** Checks once a minute, refreshes when the token expires within `--refresh-margin` (default 10 minutes). Failed refreshes retry with backoff (30s → 1m → 5m) and never crash the process; successful rotations go through the same locked, writability-checked persistence path as lazy refresh.
+- **`Client.EnsureFresh(ctx, margin)` / `Client.AccessExpiry()`** — the public hooks behind the keepalive, usable from any long-lived library consumer. The `TokenProvider` interface is unchanged; custom providers degrade to a plain `Token()` call.
+- **`MessagesService.Raw` / `MessagesService.CountTokensRaw`** — apply the full request-preparation pipeline, then return the raw upstream `*http.Response` for pass-through use.
+- **`Credentials.LiveFor(margin)`** — margin-parameterised liveness check; `IsAccessLive()` is now `LiveFor(60s)`.
+- **Serve flags:** `--listen ADDR` (default `127.0.0.1:8787`), `--auth-key KEY` (or `KRAUBE_SERVE_KEY`), `--refresh-margin DURATION`. Non-loopback listen without a key is refused at startup; with a key, every endpoint except `/healthz` requires `Authorization: Bearer <key>` or `x-api-key: <key>`.
+- **Graceful shutdown** on SIGINT/SIGTERM with a 10-second drain window for in-flight requests.
+- **`deploy/kraube-serve.service`** — systemd unit (`Restart=always`, `After=network-online.target`) with system-wide and `systemctl --user` install instructions.
+
+### Changed
+- `tokenManager` refresh paths take an explicit freshness margin instead of hard-coding the 60-second window; `Token()` behaviour is unchanged.
+
 ## [0.5.0] - 2026-05-16
 
 ### Added

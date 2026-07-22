@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.6.0] - 2026-07-22
+
+### Added
+- **`kraube serve` — a long-lived local HTTP daemon** (new `Server` type in the library, `serve` subcommand in the CLI). Until now every consumer either linked the Go library or shelled out to a short-lived `kraube` invocation; both leave the OAuth access token refreshing lazily, at request time, and both let multiple short-lived processes contend for the single-use refresh token. The daemon inverts this: one permanently running process becomes the sole owner of `credentials.json`, refreshes the token proactively in the background so it never approaches expiry, and exposes the Messages API over plain HTTP on localhost for any process on the machine. Endpoints:
+  - `POST /v1/messages` — proxy to Anthropic. The body is decoded into a `MessageRequest` so the full OAuth injection pipeline (identity preamble, billing header, `metadata.user_id`, model-specific beta headers) applies — a blind byte-forwarder would be rejected with 403/429. The upstream response is then passed through verbatim: for `"stream": true` bodies that means raw SSE bytes copied chunk-by-chunk with a `Flush` after every read — no event re-parsing, no re-serialization, no added latency.
+  - `POST /v1/messages/count_tokens` — proxy, same pass-through semantics.
+  - `GET /healthz` — token liveness (`access_token_live`, `expires_at`, `expires_in`), last background refresh time/result, uptime. Returns `503` only in the "requests will fail and the daemon cannot fix it" state: token dead **and** the last background refresh failed. Unauthenticated by design so liveness probes don't need the key.
+  - `GET /usage` — subscription rate-limit windows from the in-memory/on-disk cache (populated for free by response headers of proxied calls). Never makes a paid upstream probe; an empty cache yields `404`.
+- **Background token keepalive.** A goroutine checks once a minute and refreshes when the access token expires within `--refresh-margin` (default 10 minutes) — well ahead of the lazy 60-second window used by `Token()`. Failed refreshes are retried with a coarse backoff (30s → 1m → 5m) and never crash the process: a failed refresh does not burn the single-use refresh token, so retrying later is always safe. Successful rotations go through the same locked `refreshPersistent` path as lazy refresh, including the v0.5.x writability check that refuses to rotate when `credentials.json` cannot be written back.
+- **`Client.EnsureFresh(ctx, margin)` / `Client.AccessExpiry()`.** The public hooks behind the keepalive, available to any library consumer running its own long-lived process. `EnsureFresh` forces a refresh when the token expires within `margin`; for the built-in managers (`WithToken`, `WithTokenFile`, `WithEnvToken`) this goes through a new internal `ensureFresh` path parameterised by margin (the `TokenProvider` interface is unchanged); custom providers degrade to a plain `Token()` call. `AccessExpiry` reports the current `expiresAt` when the provider exposes it.
+- **`MessagesService.Raw` / `MessagesService.CountTokensRaw`.** Return the raw upstream `*http.Response` (status, headers, body untouched) after applying the full request-preparation pipeline. This is what the daemon's proxy is built on; exported because "apply the OAuth injection, then give me the bytes" is broadly useful for any gateway-shaped consumer.
+- **`Credentials.LiveFor(margin)`** — margin-parameterised liveness check; `IsAccessLive()` is now `LiveFor(60s)`.
+- **Serve flags:** `--listen ADDR` (default `127.0.0.1:8787`), `--auth-key KEY` (or `KRAUBE_SERVE_KEY` env), `--refresh-margin DURATION`; global `--debug` / `--proxy` apply as everywhere. Security stance is fail-loud: a non-loopback listen address without an auth key is refused at startup — anyone who can reach the port can spend the subscription, so exposing it must be an explicit decision. With a key set, every endpoint except `/healthz` requires `Authorization: Bearer <key>` or `x-api-key: <key>` (constant-time comparison).
+- **Graceful shutdown** on SIGINT/SIGTERM: the keepalive stops, in-flight requests (including open SSE streams) get a 10-second drain window via `http.Server.Shutdown`.
+- **`deploy/kraube-serve.service`** — systemd unit (`Restart=always`, `After=network-online.target`, sandboxing) with instructions for both system-wide and `systemctl --user` installs.
+
+### Changed
+- `tokenManager.refreshInMemory` / `refreshPersistent` now take an explicit margin instead of hard-coding the 60-second window, so a forced early refresh re-checks disk/memory state against the *requested* margin — a token another process rotated five minutes ago is reused by the lazy path but still rotated by a 10-minute-margin keepalive. `Token()` behaviour is unchanged (`accessTokenMargin` = 60s).
+- `envTokenManager` inner-manager resolution is factored into `resolveInner()` and reused by `Token` and the new `ensureFresh`.
+
 ## [0.5.0] - 2026-05-16
 
 ### Added
