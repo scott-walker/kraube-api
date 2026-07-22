@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.1] - 2026-07-22
+
+### Fixed
+- **A mistyped CLI flag can no longer burn an API request.** The default dispatch treats positional arguments as the prompt, so any unrecognized `--flag` used to be sent to Anthropic verbatim — `kraube --version` literally spent a paid request and printed whatever the model hallucinated back. Unknown flag-like arguments are now rejected after all known flags are stripped but before command dispatch: error on stderr, usage hint, exit code `1`, no network activity. Bare text without a leading dash remains the declared `kraube "prompt"` interface; `--history -` (stdin) keeps working because flag values are stripped together with their flags before the check. A known value flag left dangling now reports `requires a value` / `given more than once` instead of the generic error.
+- **`kraube version` / `--version` / `-v` print the binary version** (`kraube v0.6.1`) instead of querying the API. The version comes from the GoReleaser-injected `main.Version` — the `.goreleaser.yml` ldflags previously pointed at symbols that did not exist in `main`, so release binaries carried no version at all; the dead `-X main.Commit` / `-X main.Date` entries are dropped. Plain `go build` / `go install ...@vX.Y.Z` binaries fall back to the module version recorded in build info. `--help` / `-h` / `help` print usage to stdout with exit code `0` (usage on a bad invocation still goes to stderr with exit code `1`).
+- **`/healthz` no longer reports the daemon start as a token refresh.** The keepalive recorded every tick — including the no-op check at startup — as `last_refresh_at`, so a freshly started daemon claimed a refresh that never happened. The `last_refresh_at` / `last_refresh_ok` / `last_refresh_error` trio now describes only background refreshes that actually ran (a failed attempt counts; a tick that found the token fresh does not) and is absent until the first real refresh. Detection compares `AccessExpiry` around `EnsureFresh`: an error or a moved expiry means a refresh happened, so a rotation by another process adopted from disk is also reported honestly. The daemon start time is its own field: `started_at` (RFC3339), alongside the existing `uptime`.
+
 ## [0.6.0] - 2026-07-22
 
 ### Added

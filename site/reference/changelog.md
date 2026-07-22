@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.1] - 2026-07-22
+
+### Fixed
+- **A mistyped CLI flag can no longer burn an API request.** Any unrecognized `--flag` used to be sent to Anthropic as a prompt — `kraube --version` literally spent a paid request and printed a model hallucination. Unknown flag-like arguments are now rejected before dispatch: error on stderr, usage hint, exit code `1`, no network activity. Bare text remains the declared `kraube "prompt"` interface, and `--history -` (stdin) keeps working.
+- **`kraube version` / `--version` / `-v` print the binary version** (`kraube v0.6.1`) instead of querying the API. Release binaries get the version via GoReleaser ldflags (which previously pointed at non-existent symbols); `go install ...@vX.Y.Z` builds fall back to the module version from build info. `--help` / `-h` / `help` print usage with exit code `0`.
+- **`/healthz` no longer reports the daemon start as a token refresh.** The `last_refresh_at` / `last_refresh_ok` / `last_refresh_error` fields now describe only background refreshes that actually ran (a failed attempt counts; a no-op tick does not) and are absent until the first real refresh. The daemon start time is its own field: `started_at`, alongside the existing `uptime`.
+
 ## [0.6.0] - 2026-07-22
 
 ### Added

@@ -299,7 +299,7 @@ Endpoints:
 |----------|-------------|
 | `POST /v1/messages` | Proxy to Anthropic. All OAuth injection (identity preamble, billing header, metadata, beta headers) is applied server-side; with `"stream": true` the SSE bytes are passed through raw, flushed chunk-by-chunk. |
 | `POST /v1/messages/count_tokens` | Proxy. |
-| `GET /healthz` | Token liveness, expiry, last background refresh result, uptime. `503` when the token is dead and refresh is failing. No auth required. |
+| `GET /healthz` | Token liveness, expiry, start time/uptime, and the last *actually performed* background refresh (fields absent until one runs). `503` when the token is dead and refresh is failing. No auth required. |
 | `GET /usage` | Cached subscription rate-limit windows (5h / 7d). Never makes a paid upstream call; `404` until the first proxied request populates the cache. |
 
 ```bash
@@ -349,11 +349,12 @@ kraube "What is Go?"                  # send a message
 kraube stream "Tell me..."            # stream response
 kraube usage                          # subscription limits
 kraube serve                          # local HTTP daemon (proxy + keepalive)
+kraube version                        # print the binary version (also --version / -v)
 kraube --debug "prompt"               # verbose logging
 kraube --proxy http://user:pass@host:8080 "prompt"   # route via proxy
 ```
 
-Available flags: `--debug`, `--proxy URL`, `--out PATH` (login only), and for `serve`: `--listen ADDR`, `--auth-key KEY`, `--refresh-margin DURATION`. The client also honors `HTTPS_PROXY` / `ALL_PROXY`, `KRAUBE_CREDENTIALS_PATH`, and `KRAUBE_SERVE_KEY` from the environment.
+Available flags: `--debug`, `--proxy URL`, `--version`/`-v`, `--help`/`-h`, `--out PATH` (login only), and for `serve`: `--listen ADDR`, `--auth-key KEY`, `--refresh-margin DURATION`. The client also honors `HTTPS_PROXY` / `ALL_PROXY`, `KRAUBE_CREDENTIALS_PATH`, and `KRAUBE_SERVE_KEY` from the environment. Any unrecognized flag is rejected with an error and exit code 1 — it is never sent to the API as a prompt.
 
 ## Documentation
 

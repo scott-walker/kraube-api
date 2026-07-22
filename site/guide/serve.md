@@ -49,6 +49,7 @@ curl http://127.0.0.1:8787/healthz
 ```json
 {
   "status": "ok",
+  "started_at": "2026-07-22T13:35:00+03:00",
   "uptime": "2h13m5s",
   "access_token_live": true,
   "expires_at": "2026-07-22T16:47:35+03:00",
@@ -57,6 +58,8 @@ curl http://127.0.0.1:8787/healthz
   "last_refresh_ok": true
 }
 ```
+
+The `last_refresh_*` fields describe only background refreshes that were **actually performed** (or attempted and failed — then `last_refresh_ok` is `false` and `last_refresh_error` carries the reason). Keepalive ticks that find the token still fresh are no-ops and are not reported, so all three fields are absent until the first real refresh. The daemon start time is a separate fact: `started_at` / `uptime`.
 
 `503` is returned only in the "requests will fail and the daemon cannot fix it" state: the token is dead **and** the last background refresh failed. A dead token right after startup is `"degraded"` but `200` — the keepalive is about to repair it. `/healthz` never requires the auth key, so systemd and monitoring probes stay simple.
 

@@ -48,6 +48,18 @@ Show subscription rate limits.
 kraube usage
 ```
 
+### version
+
+Print the binary version and exit — resolved entirely locally, no API request is made. `--version` and `-v` are equivalent.
+
+```bash
+kraube version     # kraube v0.6.1
+kraube --version
+kraube -v
+```
+
+Release binaries carry the version via GoReleaser ldflags; `go install github.com/scott-walker/kraube-api/cmd/kraube@vX.Y.Z` builds report the module version from build info.
+
 ### serve
 
 Run a permanently-alive local HTTP daemon: a proxy to the Anthropic Messages API plus a background keepalive that refreshes the OAuth access token before it ever approaches expiry. Intended to run under systemd (see [`deploy/kraube-serve.service`](https://github.com/scott-walker/kraube-api/blob/main/deploy/kraube-serve.service)) as the single owner of `credentials.json`.
@@ -62,7 +74,7 @@ kraube serve --listen 0.0.0.0:8787 --auth-key s3cret
 |----------|-------------|
 | `POST /v1/messages` | Proxy. Full OAuth injection (identity preamble, billing header, metadata, beta headers) is applied before forwarding; `"stream": true` responses are passed through as raw SSE bytes, flushed chunk-by-chunk. |
 | `POST /v1/messages/count_tokens` | Proxy. |
-| `GET /healthz` | Token liveness, expiry, last background refresh result, uptime. `503` when the token is dead and refresh keeps failing. Never requires the auth key. |
+| `GET /healthz` | Token liveness, expiry, `started_at`/`uptime`, and the last *actually performed* background refresh (`last_refresh_*` fields, absent until one runs). `503` when the token is dead and refresh keeps failing. Never requires the auth key. |
 | `GET /usage` | Cached rate-limit windows. `404` until the first proxied call populates the cache — no paid probe is ever made. |
 
 | Flag | Description |
@@ -79,7 +91,11 @@ Failed background refreshes are retried with backoff (30s → 1m → 5m) and nev
 |------|-------|-------------|
 | `--debug` | all commands | Verbose debug logging to stderr. Includes full `api: error response` dumps (status, URL, local/remote addresses, proxy, redacted headers, request & response bodies). |
 | `--proxy URL` | all commands | Route all outbound traffic (API + OAuth) through a proxy. Schemes: `http`, `https`, `socks5`, `socks5h`. Credentials in the URL are used for Basic proxy auth. When omitted, `HTTPS_PROXY` / `ALL_PROXY` from the environment are honored automatically. |
+| `--version`, `-v` | all commands | Print the binary version and exit. |
+| `--help`, `-h` | all commands | Print usage and exit. |
 | `--out PATH` | `login` only | Write credentials to a custom path |
+
+Any argument starting with `-` that is not a recognized flag is rejected with an error on stderr and exit code `1` — before any network activity. Only bare text (the declared `kraube "prompt"` interface) is sent to the API as a prompt, so a mistyped flag can never burn an API request.
 
 ```bash
 kraube --proxy http://user:pass@proxy.example.com:8080 "hi"
