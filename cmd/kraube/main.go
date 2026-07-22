@@ -122,46 +122,50 @@ func main() {
 	}
 }
 
+// usageText is the CLI usage, printed by printUsage.
+const usageText = `Usage:
+  kraube login [--out PATH]  — authenticate via browser
+  kraube usage               — show plan usage limits
+  kraube "your prompt"       — send a message
+  kraube stream "prompt"     — stream response
+  kraube serve               — local HTTP daemon (proxy + token keepalive)
+  kraube version             — print the binary version
+
+Serve flags:
+  --listen ADDR              — listen address (default 127.0.0.1:8787)
+  --auth-key KEY             — require Bearer/x-api-key auth (or KRAUBE_SERVE_KEY)
+                               mandatory when ADDR is not loopback
+  --refresh-margin DURATION  — refresh token this long before expiry (default 10m)
+
+Global flags:
+  --debug                    — verbose logging (or KRAUBE_DEBUG=1)
+  --out PATH                 — credentials file path (login only)
+  --proxy URL                — route all traffic through proxy
+                               schemes: http, https, socks5, socks5h
+                               (falls back to HTTPS_PROXY/ALL_PROXY env)
+  --version, -v              — print the binary version
+  --help, -h                 — show this help
+
+Generation flags (query / stream / default):
+  --system TEXT              — system prompt as inline text
+  --system-file PATH         — system prompt read from a file
+  --history PATH|-           — prior messages as JSON array
+                               (file path, or "-" to read from stdin)
+                               format: [{"role":"user|assistant",
+                                         "content":"..."}, ...]
+  --model NAME               — model id (default claude-sonnet-4-6)
+  --max-tokens N             — response cap in tokens (default 4096)
+  --temperature F            — sampling temperature 0.0..1.0
+
+Env:
+  KRAUBE_CREDENTIALS_PATH    — override credentials file path globally
+  HTTPS_PROXY / ALL_PROXY    — proxy URL (used when --proxy not given)
+`
+
 // printUsage writes the CLI usage text to w: os.Stderr with exit 1 when the
 // invocation was wrong, os.Stdout with exit 0 for an explicit help request.
 func printUsage(w io.Writer) {
-	fmt.Fprintln(w, "Usage:")
-	fmt.Fprintln(w, "  kraube login [--out PATH]  — authenticate via browser")
-	fmt.Fprintln(w, "  kraube usage               — show plan usage limits")
-	fmt.Fprintln(w, "  kraube \"your prompt\"       — send a message")
-	fmt.Fprintln(w, "  kraube stream \"prompt\"     — stream response")
-	fmt.Fprintln(w, "  kraube serve               — local HTTP daemon (proxy + token keepalive)")
-	fmt.Fprintln(w, "  kraube version             — print the binary version")
-	fmt.Fprintln(w, "")
-	fmt.Fprintln(w, "Serve flags:")
-	fmt.Fprintln(w, "  --listen ADDR              — listen address (default 127.0.0.1:8787)")
-	fmt.Fprintln(w, "  --auth-key KEY             — require Bearer/x-api-key auth (or KRAUBE_SERVE_KEY)")
-	fmt.Fprintln(w, "                               mandatory when ADDR is not loopback")
-	fmt.Fprintln(w, "  --refresh-margin DURATION  — refresh token this long before expiry (default 10m)")
-	fmt.Fprintln(w, "")
-	fmt.Fprintln(w, "Global flags:")
-	fmt.Fprintln(w, "  --debug                    — verbose logging (or KRAUBE_DEBUG=1)")
-	fmt.Fprintln(w, "  --out PATH                 — credentials file path (login only)")
-	fmt.Fprintln(w, "  --proxy URL                — route all traffic through proxy")
-	fmt.Fprintln(w, "                               schemes: http, https, socks5, socks5h")
-	fmt.Fprintln(w, "                               (falls back to HTTPS_PROXY/ALL_PROXY env)")
-	fmt.Fprintln(w, "  --version, -v              — print the binary version")
-	fmt.Fprintln(w, "  --help, -h                 — show this help")
-	fmt.Fprintln(w, "")
-	fmt.Fprintln(w, "Generation flags (query / stream / default):")
-	fmt.Fprintln(w, "  --system TEXT              — system prompt as inline text")
-	fmt.Fprintln(w, "  --system-file PATH         — system prompt read from a file")
-	fmt.Fprintln(w, "  --history PATH|-           — prior messages as JSON array")
-	fmt.Fprintln(w, "                               (file path, or \"-\" to read from stdin)")
-	fmt.Fprintln(w, "                               format: [{\"role\":\"user|assistant\",")
-	fmt.Fprintln(w, "                                         \"content\":\"...\"}, ...]")
-	fmt.Fprintln(w, "  --model NAME               — model id (default claude-sonnet-4-6)")
-	fmt.Fprintln(w, "  --max-tokens N             — response cap in tokens (default 4096)")
-	fmt.Fprintln(w, "  --temperature F            — sampling temperature 0.0..1.0")
-	fmt.Fprintln(w, "")
-	fmt.Fprintln(w, "Env:")
-	fmt.Fprintln(w, "  KRAUBE_CREDENTIALS_PATH    — override credentials file path globally")
-	fmt.Fprintln(w, "  HTTPS_PROXY / ALL_PROXY    — proxy URL (used when --proxy not given)")
+	_, _ = io.WriteString(w, usageText)
 }
 
 // cmdValueFlags lists the command-specific value flags that are parsed after
