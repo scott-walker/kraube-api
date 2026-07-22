@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"syscall"
@@ -20,6 +21,31 @@ import (
 // empty, the client still picks up HTTPS_PROXY / ALL_PROXY from the
 // environment automatically inside NewClient.
 var cliProxy string
+
+// Version is the release version, injected by GoReleaser via
+// `-ldflags "-X main.Version={{.Version}}"`. A plain `go build` leaves it as
+// "dev"; versionString then falls back to the module version recorded in
+// build info, so `go install ...@vX.Y.Z` binaries still report themselves.
+var Version = "dev"
+
+// versionString renders the one-line `kraube --version` output. Preference
+// order: linker-injected Version, then the module version from build info
+// (covers `go install ...@vX.Y.Z`), then plain "dev". The version is
+// normalized to a leading "v" ("kraube v0.6.1") to match release tags.
+func versionString() string {
+	v := Version
+	if v == "" || v == "dev" {
+		if bi, ok := debug.ReadBuildInfo(); ok && bi.Main.Version != "" && bi.Main.Version != "(devel)" {
+			v = bi.Main.Version
+		} else {
+			v = "dev"
+		}
+	}
+	if v != "dev" && !strings.HasPrefix(v, "v") {
+		v = "v" + v
+	}
+	return "kraube " + v
+}
 
 func main() {
 	// Dev logging: kraube --debug ... or KRAUBE_DEBUG=1
@@ -45,41 +71,30 @@ func main() {
 	// Parsed before command dispatch so they are stripped from os.Args.
 	genOpts := parseGenFlags()
 
+	// Informational flags — resolved locally, must never reach the API.
+	if hasFlag("--version") || hasFlag("-v") {
+		fmt.Println(versionString())
+		return
+	}
+	if hasFlag("--help") || hasFlag("-h") {
+		printUsage(os.Stdout)
+		return
+	}
+
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "Usage:")
-		fmt.Fprintln(os.Stderr, "  kraube login [--out PATH]  — authenticate via browser")
-		fmt.Fprintln(os.Stderr, "  kraube usage               — show plan usage limits")
-		fmt.Fprintln(os.Stderr, "  kraube \"your prompt\"       — send a message")
-		fmt.Fprintln(os.Stderr, "  kraube stream \"prompt\"     — stream response")
-		fmt.Fprintln(os.Stderr, "  kraube serve               — local HTTP daemon (proxy + token keepalive)")
-		fmt.Fprintln(os.Stderr, "")
-		fmt.Fprintln(os.Stderr, "Serve flags:")
-		fmt.Fprintln(os.Stderr, "  --listen ADDR              — listen address (default 127.0.0.1:8787)")
-		fmt.Fprintln(os.Stderr, "  --auth-key KEY             — require Bearer/x-api-key auth (or KRAUBE_SERVE_KEY)")
-		fmt.Fprintln(os.Stderr, "                               mandatory when ADDR is not loopback")
-		fmt.Fprintln(os.Stderr, "  --refresh-margin DURATION  — refresh token this long before expiry (default 10m)")
-		fmt.Fprintln(os.Stderr, "")
-		fmt.Fprintln(os.Stderr, "Global flags:")
-		fmt.Fprintln(os.Stderr, "  --debug                    — verbose logging (or KRAUBE_DEBUG=1)")
-		fmt.Fprintln(os.Stderr, "  --out PATH                 — credentials file path (login only)")
-		fmt.Fprintln(os.Stderr, "  --proxy URL                — route all traffic through proxy")
-		fmt.Fprintln(os.Stderr, "                               schemes: http, https, socks5, socks5h")
-		fmt.Fprintln(os.Stderr, "                               (falls back to HTTPS_PROXY/ALL_PROXY env)")
-		fmt.Fprintln(os.Stderr, "")
-		fmt.Fprintln(os.Stderr, "Generation flags (query / stream / default):")
-		fmt.Fprintln(os.Stderr, "  --system TEXT              — system prompt as inline text")
-		fmt.Fprintln(os.Stderr, "  --system-file PATH         — system prompt read from a file")
-		fmt.Fprintln(os.Stderr, "  --history PATH|-           — prior messages as JSON array")
-		fmt.Fprintln(os.Stderr, "                               (file path, or \"-\" to read from stdin)")
-		fmt.Fprintln(os.Stderr, "                               format: [{\"role\":\"user|assistant\",")
-		fmt.Fprintln(os.Stderr, "                                         \"content\":\"...\"}, ...]")
-		fmt.Fprintln(os.Stderr, "  --model NAME               — model id (default claude-sonnet-4-6)")
-		fmt.Fprintln(os.Stderr, "  --max-tokens N             — response cap in tokens (default 4096)")
-		fmt.Fprintln(os.Stderr, "  --temperature F            — sampling temperature 0.0..1.0")
-		fmt.Fprintln(os.Stderr, "")
-		fmt.Fprintln(os.Stderr, "Env:")
-		fmt.Fprintln(os.Stderr, "  KRAUBE_CREDENTIALS_PATH    — override credentials file path globally")
-		fmt.Fprintln(os.Stderr, "  HTTPS_PROXY / ALL_PROXY    — proxy URL (used when --proxy not given)")
+		printUsage(os.Stderr)
+		os.Exit(1)
+	}
+
+	// Every known flag has been stripped from os.Args by now (command-specific
+	// flags like --out / --listen are the exception: they are parsed after
+	// dispatch and skipped by the check). Anything flag-like that remains is a
+	// typo — refuse it loudly, because the default dispatch below sends
+	// positional arguments to the API as a prompt, and a mistyped flag must
+	// not become a paid request.
+	if msg := residualFlagError(os.Args[1:]); msg != "" {
+		fmt.Fprintf(os.Stderr, "Error: %s\n", msg)
+		fmt.Fprintln(os.Stderr, "Run `kraube --help` for usage.")
 		os.Exit(1)
 	}
 
@@ -92,6 +107,10 @@ func main() {
 		cmdUsage(ctx)
 	case "serve":
 		cmdServe(ctx)
+	case "version":
+		fmt.Println(versionString())
+	case "help":
+		printUsage(os.Stdout)
 	case "stream":
 		if len(os.Args) < 3 {
 			fmt.Fprintln(os.Stderr, "Usage: kraube stream \"prompt\"")
@@ -101,6 +120,103 @@ func main() {
 	default:
 		cmdQuery(ctx, strings.Join(os.Args[1:], " "), genOpts)
 	}
+}
+
+// printUsage writes the CLI usage text to w: os.Stderr with exit 1 when the
+// invocation was wrong, os.Stdout with exit 0 for an explicit help request.
+func printUsage(w io.Writer) {
+	fmt.Fprintln(w, "Usage:")
+	fmt.Fprintln(w, "  kraube login [--out PATH]  — authenticate via browser")
+	fmt.Fprintln(w, "  kraube usage               — show plan usage limits")
+	fmt.Fprintln(w, "  kraube \"your prompt\"       — send a message")
+	fmt.Fprintln(w, "  kraube stream \"prompt\"     — stream response")
+	fmt.Fprintln(w, "  kraube serve               — local HTTP daemon (proxy + token keepalive)")
+	fmt.Fprintln(w, "  kraube version             — print the binary version")
+	fmt.Fprintln(w, "")
+	fmt.Fprintln(w, "Serve flags:")
+	fmt.Fprintln(w, "  --listen ADDR              — listen address (default 127.0.0.1:8787)")
+	fmt.Fprintln(w, "  --auth-key KEY             — require Bearer/x-api-key auth (or KRAUBE_SERVE_KEY)")
+	fmt.Fprintln(w, "                               mandatory when ADDR is not loopback")
+	fmt.Fprintln(w, "  --refresh-margin DURATION  — refresh token this long before expiry (default 10m)")
+	fmt.Fprintln(w, "")
+	fmt.Fprintln(w, "Global flags:")
+	fmt.Fprintln(w, "  --debug                    — verbose logging (or KRAUBE_DEBUG=1)")
+	fmt.Fprintln(w, "  --out PATH                 — credentials file path (login only)")
+	fmt.Fprintln(w, "  --proxy URL                — route all traffic through proxy")
+	fmt.Fprintln(w, "                               schemes: http, https, socks5, socks5h")
+	fmt.Fprintln(w, "                               (falls back to HTTPS_PROXY/ALL_PROXY env)")
+	fmt.Fprintln(w, "  --version, -v              — print the binary version")
+	fmt.Fprintln(w, "  --help, -h                 — show this help")
+	fmt.Fprintln(w, "")
+	fmt.Fprintln(w, "Generation flags (query / stream / default):")
+	fmt.Fprintln(w, "  --system TEXT              — system prompt as inline text")
+	fmt.Fprintln(w, "  --system-file PATH         — system prompt read from a file")
+	fmt.Fprintln(w, "  --history PATH|-           — prior messages as JSON array")
+	fmt.Fprintln(w, "                               (file path, or \"-\" to read from stdin)")
+	fmt.Fprintln(w, "                               format: [{\"role\":\"user|assistant\",")
+	fmt.Fprintln(w, "                                         \"content\":\"...\"}, ...]")
+	fmt.Fprintln(w, "  --model NAME               — model id (default claude-sonnet-4-6)")
+	fmt.Fprintln(w, "  --max-tokens N             — response cap in tokens (default 4096)")
+	fmt.Fprintln(w, "  --temperature F            — sampling temperature 0.0..1.0")
+	fmt.Fprintln(w, "")
+	fmt.Fprintln(w, "Env:")
+	fmt.Fprintln(w, "  KRAUBE_CREDENTIALS_PATH    — override credentials file path globally")
+	fmt.Fprintln(w, "  HTTPS_PROXY / ALL_PROXY    — proxy URL (used when --proxy not given)")
+}
+
+// cmdValueFlags lists the command-specific value flags that are parsed after
+// dispatch (cmdLogin / cmdServe read them via flagValue), so they
+// legitimately survive until the unknown-flag check and must be skipped
+// together with their value.
+var cmdValueFlags = map[string][]string{
+	"login": {"--out"},
+	"serve": {"--listen", "--auth-key", "--refresh-margin"},
+}
+
+// preDispatchValueFlags are the value flags stripped before dispatch (by
+// flagValue in main and parseGenFlags). flagValue only strips a flag together
+// with its value, so one still present at check time means either the value
+// is missing (flag is the last argument) or the flag was given twice.
+var preDispatchValueFlags = map[string]bool{
+	"--proxy":       true,
+	"--system":      true,
+	"--system-file": true,
+	"--history":     true,
+	"--model":       true,
+	"--max-tokens":  true,
+	"--temperature": true,
+}
+
+// residualFlagError inspects the arguments left over after all pre-dispatch
+// flag stripping and returns a user-facing error for the first flag-like
+// token that nothing will ever consume, or "" when the residual arguments
+// are clean. A bare "-" is not a flag: it is a valid flag value (`--history -`)
+// and never survives stripping in that role, so a leftover one is treated as
+// positional text.
+func residualFlagError(args []string) string {
+	allowed := map[string]bool{}
+	if len(args) > 0 {
+		for _, f := range cmdValueFlags[args[0]] {
+			allowed[f] = true
+		}
+	}
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		switch {
+		case allowed[a]:
+			i++ // skip the flag's value too
+		case a == "-" || !strings.HasPrefix(a, "-"):
+			// Positional argument (prompt text) — the declared interface.
+		case preDispatchValueFlags[a]:
+			if i == len(args)-1 {
+				return fmt.Sprintf("flag %s requires a value", a)
+			}
+			return fmt.Sprintf("flag %s given more than once", a)
+		default:
+			return fmt.Sprintf("unknown flag: %s", a)
+		}
+	}
+	return ""
 }
 
 // genFlags holds optional generation parameters parsed from the CLI.
@@ -459,15 +575,21 @@ func applyAuthProxy(proxyURL string) error {
 	return nil
 }
 
+// hasFlag reports whether a boolean flag is present, removing every
+// occurrence from os.Args so it does not interfere with command dispatch or
+// trip the residual unknown-flag check.
 func hasFlag(flag string) bool {
-	for i, arg := range os.Args {
+	found := false
+	kept := os.Args[:0]
+	for _, arg := range os.Args {
 		if arg == flag {
-			// Remove flag from args so it doesn't interfere with commands
-			os.Args = append(os.Args[:i], os.Args[i+1:]...)
-			return true
+			found = true
+			continue
 		}
+		kept = append(kept, arg)
 	}
-	return false
+	os.Args = kept
+	return found
 }
 
 // flagValue extracts and removes a "--key VALUE" pair from os.Args.
