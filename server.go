@@ -42,10 +42,13 @@ type Server struct {
 	serveErr   chan error    // terminal error from the HTTP serve loop
 	wg         sync.WaitGroup
 
-	// Keepalive state, reported by /healthz.
+	// Keepalive state, reported by /healthz. Only refreshes that were
+	// actually performed (or attempted and failed) are recorded — a tick
+	// that finds the token still fresh is a no-op, not a refresh, and a
+	// zero lastRefreshAt means no real refresh has happened yet.
 	mu             sync.Mutex
-	lastRefreshAt  time.Time // last background check attempt
-	lastRefreshErr error     // nil = last attempt succeeded
+	lastRefreshAt  time.Time // last actual refresh attempt; zero = none yet
+	lastRefreshErr error     // nil = last actual attempt succeeded
 }
 
 // ServerConfig configures a Server. Zero values fall back to defaults.
@@ -224,17 +227,28 @@ func (s *Server) keepalive() {
 }
 
 // refreshOnce performs a single keepalive check and records its outcome for
-// /healthz. EnsureFresh is a cheap no-op while the token outlives the margin.
+// /healthz. EnsureFresh is a cheap no-op while the token outlives the margin,
+// and a no-op is deliberately not recorded: last_refresh_at must mean "a
+// refresh actually ran", not "the loop ticked". An actual refresh is
+// detected as either a failure (EnsureFresh only errors when it attempted a
+// refresh) or a moved expiry (the token was rotated, or a rotation by
+// another process was adopted from disk). Custom TokenProviders expose no
+// expiry, so for them only failed attempts are ever recorded.
 func (s *Server) refreshOnce() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
+	expBefore, knownBefore := s.client.AccessExpiry()
 	err := s.client.EnsureFresh(ctx, s.cfg.RefreshMargin)
+	expAfter, knownAfter := s.client.AccessExpiry()
 
-	s.mu.Lock()
-	s.lastRefreshAt = time.Now()
-	s.lastRefreshErr = err
-	s.mu.Unlock()
+	refreshed := err != nil || knownBefore != knownAfter || (knownAfter && !expAfter.Equal(expBefore))
+	if refreshed {
+		s.mu.Lock()
+		s.lastRefreshAt = time.Now()
+		s.lastRefreshErr = err
+		s.mu.Unlock()
+	}
 
 	if err == nil {
 		if exp, ok := s.client.AccessExpiry(); ok {
@@ -326,16 +340,21 @@ func (s *Server) handleCountTokens(w http.ResponseWriter, r *http.Request) {
 	proxyResponse(w, resp)
 }
 
-// healthResponse is the GET /healthz payload.
+// healthResponse is the GET /healthz payload. The last_refresh_* trio
+// describes background refreshes that were actually performed (or attempted
+// and failed); all three are absent until the first real refresh — ticks
+// that find the token still fresh do not count. started_at is when the
+// daemon started, which is deliberately a separate fact.
 type healthResponse struct {
-	Status           string `json:"status"` // "ok" | "degraded"
+	Status           string `json:"status"`     // "ok" | "degraded"
+	StartedAt        string `json:"started_at"` // RFC3339, daemon start time
 	Uptime           string `json:"uptime"`
 	AccessTokenLive  bool   `json:"access_token_live"`
-	ExpiresAt        string `json:"expires_at,omitempty"` // RFC3339
-	ExpiresIn        string `json:"expires_in,omitempty"` // negative when already expired
-	LastRefreshAt    string `json:"last_refresh_at,omitempty"`
-	LastRefreshOK    *bool  `json:"last_refresh_ok,omitempty"` // absent until the first background check
-	LastRefreshError string `json:"last_refresh_error,omitempty"`
+	ExpiresAt        string `json:"expires_at,omitempty"`         // RFC3339
+	ExpiresIn        string `json:"expires_in,omitempty"`         // negative when already expired
+	LastRefreshAt    string `json:"last_refresh_at,omitempty"`    // absent until a refresh actually ran
+	LastRefreshOK    *bool  `json:"last_refresh_ok,omitempty"`    // absent until a refresh actually ran
+	LastRefreshError string `json:"last_refresh_error,omitempty"` // set when the last actual refresh failed
 }
 
 // handleHealthz reports token liveness and keepalive state. HTTP 503 only
@@ -358,6 +377,7 @@ func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
 
 	h := healthResponse{
 		Status:          "ok",
+		StartedAt:       s.startedAt.Format(time.RFC3339),
 		Uptime:          time.Since(s.startedAt).Truncate(time.Second).String(),
 		AccessTokenLive: live,
 	}

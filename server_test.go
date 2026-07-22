@@ -358,8 +358,75 @@ func TestServer_Healthz_OK(t *testing.T) {
 	client := newServeTestClient(t, upstream.URL)
 	_, base := startTestServer(t, client, ServerConfig{CheckInterval: 20 * time.Millisecond})
 
+	// Let several keepalive ticks pass. The token is live for the whole
+	// margin, so every tick is a no-op — and no-ops must NOT be reported as
+	// refreshes (the old behaviour stamped last_refresh_at at startup).
+	time.Sleep(100 * time.Millisecond)
+
+	resp, err := http.Get(base + "/healthz")
+	if err != nil {
+		t.Fatalf("GET /healthz: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
 	var h healthResponse
-	waitFor(t, 5*time.Second, "first keepalive check", func() bool {
+	if err := json.NewDecoder(resp.Body).Decode(&h); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+
+	if h.Status != "ok" {
+		t.Errorf("status = %q, want ok", h.Status)
+	}
+	if !h.AccessTokenLive {
+		t.Error("access_token_live = false, want true")
+	}
+	if h.ExpiresAt == "" || h.ExpiresIn == "" {
+		t.Errorf("expiry fields missing: %+v", h)
+	}
+	if h.StartedAt == "" {
+		t.Error("started_at missing")
+	}
+	if h.Uptime == "" {
+		t.Error("uptime missing")
+	}
+	// No refresh has actually been performed — the trio must be absent.
+	if h.LastRefreshAt != "" || h.LastRefreshOK != nil || h.LastRefreshError != "" {
+		t.Errorf("last_refresh_* reported without an actual refresh: at=%q ok=%v err=%q",
+			h.LastRefreshAt, h.LastRefreshOK, h.LastRefreshError)
+	}
+}
+
+// TestServer_Healthz_RecordsActualRefresh is the positive half of the
+// last_refresh_* semantics: once the keepalive performs a real rotation,
+// /healthz reports its time and outcome.
+func TestServer_Healthz_RecordsActualRefresh(t *testing.T) {
+	oauth := newMockTokenServer(t, "access-rotated", "refresh-rotated")
+	defer oauth.Close()
+	withMockTokenURL(t, oauth)
+
+	rec := &upstreamRecorder{}
+	upstream := newMockUpstream(t, rec, nil)
+	defer upstream.Close()
+
+	client := newServeTestClient(t, upstream.URL)
+
+	// Age the token into the refresh margin (2 minutes left vs the default
+	// 10-minute margin): the first keepalive tick must perform a real
+	// refresh and record it.
+	tm, ok := client.Provider.(*tokenManager)
+	if !ok {
+		t.Fatalf("Provider is %T, want *tokenManager", client.Provider)
+	}
+	tm.mu.Lock()
+	tm.creds.ExpiresAt = time.Now().Add(2 * time.Minute).UnixMilli()
+	tm.mu.Unlock()
+
+	_, base := startTestServer(t, client, ServerConfig{CheckInterval: 20 * time.Millisecond})
+
+	var h healthResponse
+	waitFor(t, 5*time.Second, "refresh to be recorded", func() bool {
 		resp, err := http.Get(base + "/healthz")
 		if err != nil {
 			return false
@@ -371,20 +438,17 @@ func TestServer_Healthz_OK(t *testing.T) {
 		return h.LastRefreshOK != nil
 	})
 
-	if h.Status != "ok" {
-		t.Errorf("status = %q, want ok", h.Status)
+	if !*h.LastRefreshOK {
+		t.Errorf("last_refresh_ok = false, want true (error %q)", h.LastRefreshError)
+	}
+	if h.LastRefreshAt == "" {
+		t.Error("last_refresh_at missing after an actual refresh")
+	}
+	if h.LastRefreshError != "" {
+		t.Errorf("last_refresh_error = %q, want empty", h.LastRefreshError)
 	}
 	if !h.AccessTokenLive {
-		t.Error("access_token_live = false, want true")
-	}
-	if h.ExpiresAt == "" || h.ExpiresIn == "" {
-		t.Errorf("expiry fields missing: %+v", h)
-	}
-	if h.LastRefreshOK == nil || !*h.LastRefreshOK {
-		t.Errorf("last_refresh_ok = %v, want true", h.LastRefreshOK)
-	}
-	if h.Uptime == "" {
-		t.Error("uptime missing")
+		t.Error("access_token_live = false after successful rotation, want true")
 	}
 }
 
@@ -447,6 +511,12 @@ func TestServer_Healthz_DeadTokenFailingRefresh(t *testing.T) {
 	}
 	if h.LastRefreshError == "" {
 		t.Error("last_refresh_error missing")
+	}
+	if h.LastRefreshAt == "" {
+		t.Error("last_refresh_at missing — a failed attempt is still an actual refresh attempt")
+	}
+	if h.LastRefreshOK == nil || *h.LastRefreshOK {
+		t.Errorf("last_refresh_ok = %v, want false", h.LastRefreshOK)
 	}
 }
 
