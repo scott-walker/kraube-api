@@ -19,6 +19,10 @@
 ### Changed
 - `tokenManager` refresh paths take an explicit freshness margin instead of hard-coding the 60-second window; `Token()` behaviour is unchanged.
 
+### Fixed
+- **Persistent refresh is refused when the credentials file is unwritable.** A read-only `credentials.json` (e.g. a `:ro` container bind mount) previously let the refresh succeed server-side while the rotated single-use refresh token could not be persisted — silently invalidating the on-disk token for every process sharing the file. The writability check now runs *before* the OAuth call, so the token is never burned.
+- CLI now surfaces the real `NewClient` error instead of unconditionally claiming "Not authenticated. Run: kraube login".
+
 ## [0.5.0] - 2026-05-16
 
 ### Added
