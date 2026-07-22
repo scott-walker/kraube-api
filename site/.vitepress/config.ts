@@ -68,6 +68,7 @@ export default defineConfig({
             { text: 'Extended Thinking', link: '/guide/thinking' },
             { text: 'Vision & Documents', link: '/guide/vision' },
             { text: 'Structured Output', link: '/guide/structured-output' },
+            { text: 'Serve Daemon', link: '/guide/serve' },
           ],
         },
         {

@@ -17,7 +17,32 @@ kraube stream "Напиши стихотворение"
 
 # Лимиты подписки
 kraube usage
+
+# Локальный демон: прокси к Messages API + фоновый рефреш токена
+kraube serve
 ```
+
+### Демон `kraube serve`
+
+Постоянно живой локальный HTTP-шлюз: проксирует `POST /v1/messages` и
+`POST /v1/messages/count_tokens` (со всей inject-логикой OAuth — identity
+preamble, billing header, metadata, beta headers; стриминг отдаётся сырыми
+SSE-байтами с flush на каждый чанк), плюс `GET /healthz` и `GET /usage`.
+Фоновая горутина рефрешит access-токен за `--refresh-margin` (по умолчанию
+10 минут) до истечения, так что демон — единственный владелец
+`credentials.json`, и одноразовый refresh-токен ротируется ровно в одном
+месте.
+
+```bash
+kraube serve --listen 127.0.0.1:8787 --refresh-margin 10m
+# не-loopback адрес требует ключ (--auth-key или KRAUBE_SERVE_KEY):
+kraube serve --listen 0.0.0.0:8787 --auth-key s3cret
+```
+
+systemd-юнит с инструкцией — `deploy/kraube-serve.service`.
+Из библиотеки то же самое доступно через `kraube.NewServer(client, cfg)`,
+а примитив проактивного рефреша — через `client.EnsureFresh(ctx, margin)`
+и `client.AccessExpiry()`.
 
 ## Создание клиента
 

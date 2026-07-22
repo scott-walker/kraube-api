@@ -48,6 +48,31 @@ Show subscription rate limits.
 kraube usage
 ```
 
+### serve
+
+Run a permanently-alive local HTTP daemon: a proxy to the Anthropic Messages API plus a background keepalive that refreshes the OAuth access token before it ever approaches expiry. Intended to run under systemd (see [`deploy/kraube-serve.service`](https://github.com/scott-walker/kraube-api/blob/main/deploy/kraube-serve.service)) as the single owner of `credentials.json`.
+
+```bash
+kraube serve
+kraube serve --listen 127.0.0.1:9000 --refresh-margin 15m
+kraube serve --listen 0.0.0.0:8787 --auth-key s3cret
+```
+
+| Endpoint | Description |
+|----------|-------------|
+| `POST /v1/messages` | Proxy. Full OAuth injection (identity preamble, billing header, metadata, beta headers) is applied before forwarding; `"stream": true` responses are passed through as raw SSE bytes, flushed chunk-by-chunk. |
+| `POST /v1/messages/count_tokens` | Proxy. |
+| `GET /healthz` | Token liveness, expiry, last background refresh result, uptime. `503` when the token is dead and refresh keeps failing. Never requires the auth key. |
+| `GET /usage` | Cached rate-limit windows. `404` until the first proxied call populates the cache — no paid probe is ever made. |
+
+| Flag | Description |
+|------|-------------|
+| `--listen ADDR` | Listen address. Default `127.0.0.1:8787`. A non-loopback address without an auth key is refused at startup. |
+| `--auth-key KEY` | Require `Authorization: Bearer <key>` or `x-api-key: <key>` on all endpoints except `/healthz`. Falls back to `KRAUBE_SERVE_KEY`. |
+| `--refresh-margin DURATION` | Refresh the access token when it expires within this window. Default `10m`. |
+
+Failed background refreshes are retried with backoff (30s → 1m → 5m) and never crash the daemon. SIGINT/SIGTERM triggers a graceful shutdown with a 10-second drain window for in-flight requests.
+
 ## Global flags
 
 | Flag | Scope | Description |
@@ -103,5 +128,6 @@ kraube --system "Reply only with the literal answer, no explanation." \
 |----------|-------------|
 | `KRAUBE_DEBUG=1` | Enable debug logging (same as `--debug`) |
 | `KRAUBE_CREDENTIALS_PATH` | Override the default credentials path globally (honored by both the CLI and `WithTokenFile("")`) |
+| `KRAUBE_SERVE_KEY` | Auth key for `kraube serve` (same as `--auth-key`) |
 | `HTTPS_PROXY` / `https_proxy` | Proxy URL used when `--proxy` is not set (checked first) |
 | `ALL_PROXY` / `all_proxy` | Fallback proxy URL when `HTTPS_PROXY` is absent |

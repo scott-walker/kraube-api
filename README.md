@@ -26,6 +26,7 @@ Access Claude (Opus, Sonnet, Haiku) through your Pro/Max/Team subscription. No A
 - **Stateless** — token comes from any source via `TokenProvider` interface
 - **Replicates** Claude Code CLI protocol: billing header, metadata, beta headers, Chrome TLS
 - **Streaming** and non-streaming requests, tool use, extended thinking, vision, documents
+- **Daemon mode** — `kraube serve`: local HTTP gateway with proactive background token refresh
 - **Lightweight** — minimal wrapper over HTTP, not a framework
 
 ## Quick Start
@@ -279,6 +280,48 @@ HTTPS_PROXY=http://proxy:8080 kraube "hi"
 
 The `--proxy` flag applies to every subcommand (`login`, `usage`, `query`, `stream`) and is installed for OAuth calls as well, so `kraube login --proxy ...` also goes through the proxy.
 
+## Serve — local daemon
+
+`kraube serve` runs a permanently-alive local HTTP gateway in front of the Anthropic Messages API. Two problems it solves:
+
+1. **Tokens never go stale.** The OAuth access token is refreshed lazily by default — at request time, only within 60 seconds of expiry. The daemon refreshes proactively in the background (`--refresh-margin`, default 10 minutes ahead), so requests never pay refresh latency and never race an expiring token. Failed refreshes retry with backoff (30s → 1m → 5m) and never crash the process.
+2. **One owner for `credentials.json`.** The refresh token is single-use: every refresh rotates it. With many short-lived processes sharing the file, rotation relies on file locking; with the daemon, exactly one long-lived process owns the credentials and everyone else talks HTTP.
+
+```bash
+kraube serve                                   # 127.0.0.1:8787
+kraube serve --listen 127.0.0.1:9000 --refresh-margin 15m
+kraube serve --listen 0.0.0.0:8787 --auth-key s3cret   # non-loopback requires a key
+```
+
+Endpoints:
+
+| Endpoint | Description |
+|----------|-------------|
+| `POST /v1/messages` | Proxy to Anthropic. All OAuth injection (identity preamble, billing header, metadata, beta headers) is applied server-side; with `"stream": true` the SSE bytes are passed through raw, flushed chunk-by-chunk. |
+| `POST /v1/messages/count_tokens` | Proxy. |
+| `GET /healthz` | Token liveness, expiry, last background refresh result, uptime. `503` when the token is dead and refresh is failing. No auth required. |
+| `GET /usage` | Cached subscription rate-limit windows (5h / 7d). Never makes a paid upstream call; `404` until the first proxied request populates the cache. |
+
+```bash
+curl http://127.0.0.1:8787/healthz
+curl -N http://127.0.0.1:8787/v1/messages -d '{
+  "model": "claude-sonnet-4-6", "max_tokens": 256, "stream": true,
+  "messages": [{"role": "user", "content": "hi"}]
+}'
+```
+
+Security is fail-loud: listening on a non-loopback address without `--auth-key` (or `KRAUBE_SERVE_KEY`) is refused at startup — anyone who can reach the port can spend your subscription. With a key set, all endpoints except `/healthz` require `Authorization: Bearer <key>` or `x-api-key: <key>`.
+
+The daemon shuts down gracefully on SIGINT/SIGTERM (in-flight requests, including open streams, get a 10-second drain window). For production, a systemd unit with `Restart=always` and install instructions for both system-wide and `systemctl --user` setups ships in [`deploy/kraube-serve.service`](deploy/kraube-serve.service).
+
+Library consumers can embed the same thing via `kraube.NewServer(client, kraube.ServerConfig{...})`, or just reuse the keepalive primitive in their own long-lived processes:
+
+```go
+// Refresh proactively when less than 10 minutes of token lifetime remain.
+err := client.EnsureFresh(ctx, 10*time.Minute)
+exp, ok := client.AccessExpiry() // current expiresAt, when known
+```
+
 ## Architecture
 
 ```
@@ -305,11 +348,12 @@ kraube login                          # OAuth via browser
 kraube "What is Go?"                  # send a message
 kraube stream "Tell me..."            # stream response
 kraube usage                          # subscription limits
+kraube serve                          # local HTTP daemon (proxy + keepalive)
 kraube --debug "prompt"               # verbose logging
 kraube --proxy http://user:pass@host:8080 "prompt"   # route via proxy
 ```
 
-Available flags: `--debug`, `--proxy URL`, `--out PATH` (login only). The client also honors `HTTPS_PROXY` / `ALL_PROXY` and `KRAUBE_CREDENTIALS_PATH` from the environment.
+Available flags: `--debug`, `--proxy URL`, `--out PATH` (login only), and for `serve`: `--listen ADDR`, `--auth-key KEY`, `--refresh-margin DURATION`. The client also honors `HTTPS_PROXY` / `ALL_PROXY`, `KRAUBE_CREDENTIALS_PATH`, and `KRAUBE_SERVE_KEY` from the environment.
 
 ## Documentation
 

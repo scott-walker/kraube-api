@@ -77,8 +77,9 @@ client, err := kraube.NewClient(ctx,
 | `options.go` | Functional options для NewClient |
 | `transport.go` | Chrome TLS fingerprint (uTLS) |
 | `ratelimit.go` | Rate limit парсинг и кеширование |
+| `server.go` | `Server`: локальный HTTP-демон (`kraube serve`) — прокси + фоновый keepalive токена |
 | `log.go` | Опциональное slog-логирование |
-| `cmd/kraube/` | CLI: login, query, stream, usage |
+| `cmd/kraube/` | CLI: login, query, stream, usage, serve |
 
 ## Принципы проектирования
 
