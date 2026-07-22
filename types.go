@@ -86,15 +86,15 @@ type ContentBlock struct {
 	Type string `json:"type"`
 
 	// text
-	Text      string          `json:"text,omitempty"`
-	Citations []Citation      `json:"citations,omitempty"`
+	Text      string     `json:"text,omitempty"`
+	Citations []Citation `json:"citations,omitempty"`
 
 	// image
 	Source *ImageSource `json:"source,omitempty"`
 
 	// document
-	Title   string          `json:"title,omitempty"`
-	Context string          `json:"context,omitempty"`
+	Title   string `json:"title,omitempty"`
+	Context string `json:"context,omitempty"`
 
 	// tool_use
 	ID    string          `json:"id,omitempty"`
@@ -175,28 +175,28 @@ type ImageSource struct {
 // --- Cache Control ---
 
 type CacheControl struct {
-	Type string `json:"type"` // "ephemeral"
+	Type string `json:"type"`          // "ephemeral"
 	TTL  string `json:"ttl,omitempty"` // "5m" or "1h"
 }
 
 // --- Citations ---
 
 type Citation struct {
-	Type             string `json:"type"`
-	CitedText        string `json:"cited_text,omitempty"`
-	DocumentIndex    *int   `json:"document_index,omitempty"`
-	DocumentTitle    string `json:"document_title,omitempty"`
-	StartCharIndex   *int   `json:"start_char_index,omitempty"`
-	EndCharIndex     *int   `json:"end_char_index,omitempty"`
-	StartPageNumber  *int   `json:"start_page_number,omitempty"`
-	EndPageNumber    *int   `json:"end_page_number,omitempty"`
-	StartBlockIndex  *int   `json:"start_block_index,omitempty"`
-	EndBlockIndex    *int   `json:"end_block_index,omitempty"`
-	EncryptedIndex   string `json:"encrypted_index,omitempty"`
-	Title            string `json:"title,omitempty"`
-	URL              string `json:"url,omitempty"`
-	Source           string `json:"source,omitempty"`
-	SearchResultIndex *int  `json:"search_result_index,omitempty"`
+	Type              string `json:"type"`
+	CitedText         string `json:"cited_text,omitempty"`
+	DocumentIndex     *int   `json:"document_index,omitempty"`
+	DocumentTitle     string `json:"document_title,omitempty"`
+	StartCharIndex    *int   `json:"start_char_index,omitempty"`
+	EndCharIndex      *int   `json:"end_char_index,omitempty"`
+	StartPageNumber   *int   `json:"start_page_number,omitempty"`
+	EndPageNumber     *int   `json:"end_page_number,omitempty"`
+	StartBlockIndex   *int   `json:"start_block_index,omitempty"`
+	EndBlockIndex     *int   `json:"end_block_index,omitempty"`
+	EncryptedIndex    string `json:"encrypted_index,omitempty"`
+	Title             string `json:"title,omitempty"`
+	URL               string `json:"url,omitempty"`
+	Source            string `json:"source,omitempty"`
+	SearchResultIndex *int   `json:"search_result_index,omitempty"`
 }
 
 // --- Usage ---
@@ -212,31 +212,31 @@ type Usage struct {
 
 // Tool defines a tool the model can use.
 type Tool struct {
-	Type        string      `json:"type,omitempty"` // "custom" or built-in type
-	Name        string      `json:"name"`
-	Description string      `json:"description,omitempty"`
-	InputSchema *Schema     `json:"input_schema,omitempty"`
+	Type         string        `json:"type,omitempty"` // "custom" or built-in type
+	Name         string        `json:"name"`
+	Description  string        `json:"description,omitempty"`
+	InputSchema  *Schema       `json:"input_schema,omitempty"`
 	CacheControl *CacheControl `json:"cache_control,omitempty"`
 }
 
 // Schema is a JSON Schema object for tool inputs.
 type Schema struct {
-	Type       string                 `json:"type"`
-	Properties map[string]*Schema     `json:"properties,omitempty"`
-	Required   []string               `json:"required,omitempty"`
-	Items      *Schema                `json:"items,omitempty"`
-	Enum       []string               `json:"enum,omitempty"`
-	Desc       string                 `json:"description,omitempty"`
+	Type       string             `json:"type"`
+	Properties map[string]*Schema `json:"properties,omitempty"`
+	Required   []string           `json:"required,omitempty"`
+	Items      *Schema            `json:"items,omitempty"`
+	Enum       []string           `json:"enum,omitempty"`
+	Desc       string             `json:"description,omitempty"`
 
 	// Additional JSON Schema fields
-	MinItems    *int    `json:"minItems,omitempty"`
-	MaxItems    *int    `json:"maxItems,omitempty"`
-	Minimum     *float64 `json:"minimum,omitempty"`
-	Maximum     *float64 `json:"maximum,omitempty"`
-	Pattern     string  `json:"pattern,omitempty"`
-	Default     any     `json:"default,omitempty"`
-	AnyOf       []*Schema `json:"anyOf,omitempty"`
-	OneOf       []*Schema `json:"oneOf,omitempty"`
+	MinItems *int      `json:"minItems,omitempty"`
+	MaxItems *int      `json:"maxItems,omitempty"`
+	Minimum  *float64  `json:"minimum,omitempty"`
+	Maximum  *float64  `json:"maximum,omitempty"`
+	Pattern  string    `json:"pattern,omitempty"`
+	Default  any       `json:"default,omitempty"`
+	AnyOf    []*Schema `json:"anyOf,omitempty"`
+	OneOf    []*Schema `json:"oneOf,omitempty"`
 }
 
 // Built-in tool constructors.
@@ -303,7 +303,7 @@ func ThinkingAdaptive() *ThinkingConfig {
 
 type OutputConfig struct {
 	Format *OutputFormat `json:"format,omitempty"`
-	Effort string       `json:"effort,omitempty"` // "low", "medium", "high", "max"
+	Effort string        `json:"effort,omitempty"` // "low", "medium", "high", "max"
 }
 
 type OutputFormat struct {

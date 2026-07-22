@@ -37,10 +37,10 @@ type RateLimitInfo struct {
 	SevenDay *RateLimitWindow // 7-day weekly window
 
 	// Unified status from headers.
-	Status    string // "allowed", "rejected", "allowed_warning"
-	ResetsAt  time.Time
-	Claim     string // "five_hour", "seven_day", "seven_day_opus", "seven_day_sonnet", "overage"
-	Fallback  bool   // fallback mode available
+	Status   string // "allowed", "rejected", "allowed_warning"
+	ResetsAt time.Time
+	Claim    string // "five_hour", "seven_day", "seven_day_opus", "seven_day_sonnet", "overage"
+	Fallback bool   // fallback mode available
 
 	// Extra usage / overage.
 	OverageStatus         string // overage status

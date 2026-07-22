@@ -89,10 +89,10 @@ func TestSaveAndLoadRateLimit(t *testing.T) {
 
 	now := time.Now().Truncate(time.Second)
 	rl := &RateLimitInfo{
-		FiveHour: &RateLimitWindow{Utilization: 0.5, ResetsAt: now.Add(time.Hour)},
-		SevenDay: &RateLimitWindow{Utilization: 0.2, ResetsAt: now.Add(24 * time.Hour)},
-		Status:   "allowed",
-		Claim:    "five_hour",
+		FiveHour:  &RateLimitWindow{Utilization: 0.5, ResetsAt: now.Add(time.Hour)},
+		SevenDay:  &RateLimitWindow{Utilization: 0.2, ResetsAt: now.Add(24 * time.Hour)},
+		Status:    "allowed",
+		Claim:     "five_hour",
 		UpdatedAt: now,
 	}
 

@@ -4,22 +4,22 @@ import "fmt"
 
 // MessageRequest is the request body for POST /v1/messages.
 type MessageRequest struct {
-	Model         Model          `json:"model"`
-	MaxTokens     int            `json:"max_tokens"`
-	Messages      []Message      `json:"messages"`
-	System        *SystemPrompt  `json:"system,omitempty"`
-	Temperature   *float64       `json:"temperature,omitempty"`
-	TopP          *float64       `json:"top_p,omitempty"`
-	TopK          *int           `json:"top_k,omitempty"`
-	StopSequences []string       `json:"stop_sequences,omitempty"`
-	Tools         []Tool         `json:"tools,omitempty"`
-	ToolChoice    *ToolChoice    `json:"tool_choice,omitempty"`
-	Stream        bool           `json:"stream,omitempty"`
+	Model         Model           `json:"model"`
+	MaxTokens     int             `json:"max_tokens"`
+	Messages      []Message       `json:"messages"`
+	System        *SystemPrompt   `json:"system,omitempty"`
+	Temperature   *float64        `json:"temperature,omitempty"`
+	TopP          *float64        `json:"top_p,omitempty"`
+	TopK          *int            `json:"top_k,omitempty"`
+	StopSequences []string        `json:"stop_sequences,omitempty"`
+	Tools         []Tool          `json:"tools,omitempty"`
+	ToolChoice    *ToolChoice     `json:"tool_choice,omitempty"`
+	Stream        bool            `json:"stream,omitempty"`
 	Thinking      *ThinkingConfig `json:"thinking,omitempty"`
-	OutputConfig  *OutputConfig  `json:"output_config,omitempty"`
-	Metadata      *Metadata      `json:"metadata,omitempty"`
-	ServiceTier   string         `json:"service_tier,omitempty"`
-	CacheControl  *CacheControl  `json:"cache_control,omitempty"`
+	OutputConfig  *OutputConfig   `json:"output_config,omitempty"`
+	Metadata      *Metadata       `json:"metadata,omitempty"`
+	ServiceTier   string          `json:"service_tier,omitempty"`
+	CacheControl  *CacheControl   `json:"cache_control,omitempty"`
 }
 
 // Ptr helpers for optional fields.
@@ -28,11 +28,11 @@ func Int(v int) *int             { return &v }
 
 // CountTokensRequest is the request body for POST /v1/messages/count_tokens.
 type CountTokensRequest struct {
-	Model         Model          `json:"model"`
-	Messages      []Message      `json:"messages"`
-	System        *SystemPrompt  `json:"system,omitempty"`
-	Tools         []Tool         `json:"tools,omitempty"`
-	Thinking      *ThinkingConfig `json:"thinking,omitempty"`
+	Model    Model           `json:"model"`
+	Messages []Message       `json:"messages"`
+	System   *SystemPrompt   `json:"system,omitempty"`
+	Tools    []Tool          `json:"tools,omitempty"`
+	Thinking *ThinkingConfig `json:"thinking,omitempty"`
 }
 
 // --- Responses ---
@@ -176,11 +176,11 @@ func (*MessageStopEvent) EventType() string { return "message_stop" }
 
 // Delta is the incremental content in a content_block_delta.
 type Delta struct {
-	Type      string `json:"type"` // "text_delta", "input_json_delta", "thinking_delta", "signature_delta"
-	Text      string `json:"text,omitempty"`
+	Type        string `json:"type"` // "text_delta", "input_json_delta", "thinking_delta", "signature_delta"
+	Text        string `json:"text,omitempty"`
 	PartialJSON string `json:"partial_json,omitempty"`
-	Thinking  string `json:"thinking,omitempty"`
-	Signature string `json:"signature,omitempty"`
+	Thinking    string `json:"thinking,omitempty"`
+	Signature   string `json:"signature,omitempty"`
 }
 
 // DeltaFinal is the delta in a message_delta event.
