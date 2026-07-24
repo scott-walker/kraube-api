@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.7.0] - 2026-07-24
 
 ### Added
 - **`WithGateway(gatewayURL, key)` — client mode for `kraube serve`.** Until now the daemon's consumers had to speak plain HTTP themselves; a Go program linking the library and pointed at the daemon via `WithBaseURL` would double-apply the OAuth injection (its own copy of the identity/billing prefix plus the daemon's) and still drag a full OAuth setup along. A gateway client sends requests to the daemon URL, authenticates with the static serve key (`Authorization: Bearer <key>`; empty key = no header, for unauthenticated loopback daemons), performs no OAuth work at all (no credentials file, no refresh, no profile fetch), skips client-side injection, and defaults to a plain direct HTTP transport — `HTTPS_PROXY` / `ALL_PROXY` are for Anthropic egress and must not capture daemon traffic. Everything else (typed responses, streaming, error parsing, rate-limit tracking from pass-through headers) behaves as with a direct client, so swapping a `WithTokenFile` client for a `WithGateway` one is a constructor-only change.
