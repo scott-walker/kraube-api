@@ -87,6 +87,11 @@ type Client struct {
 	RateLimit     *RateLimitInfo
 	RateLimitPath string // path to cache file (for persistence between CLI runs)
 
+	// gateway marks a WithGateway client: requests go to a `kraube serve`
+	// daemon that applies the OAuth injection pipeline itself, so this client
+	// must not inject the system prefix or metadata (see prepareRequest).
+	gateway bool
+
 	Messages *MessagesService
 }
 
@@ -116,8 +121,17 @@ func NewClient(ctx context.Context, opts ...Option) (*Client, error) {
 	if cfg.baseURL != "" {
 		c.BaseURL = cfg.baseURL
 	}
+	c.gateway = cfg.gateway
 	if cfg.httpClient != nil {
 		c.HTTPClient = cfg.httpClient
+	} else if cfg.gateway {
+		// Gateway mode talks plain HTTP to a local daemon: no Chrome TLS
+		// fingerprint needed, and HTTPS_PROXY / ALL_PROXY (meant for the
+		// Anthropic egress) must not capture this traffic — the daemon is the
+		// one that goes through the proxy.
+		tr := http.DefaultTransport.(*http.Transport).Clone()
+		tr.Proxy = nil
+		c.HTTPClient = &http.Client{Transport: tr}
 	} else {
 		// Resolve proxy: explicit WithProxy wins; if absent (not just empty),
 		// fall back to HTTPS_PROXY / ALL_PROXY. Passing WithProxy("") is an
@@ -312,6 +326,14 @@ func (c *Client) injectMetadata(req *MessageRequest) {
 // identity → billing → user. Callers that already provide their own system
 // prompt (string or blocks) keep it verbatim; the prefix is prepended.
 func (c *Client) injectSystemPrefix(req *MessageRequest) {
+	// Idempotent: a request that already starts with the identity preamble
+	// has been through this injection once — e.g. a full (non-gateway) kraube
+	// client pointed at `kraube serve` injects client-side, and the daemon's
+	// Raw path must not prepend a second copy.
+	if hasSystemPrefix(req) {
+		return
+	}
+
 	identityBlock := SystemBlock{Type: "text", Text: claudeCodeIdentity}
 	billingBlock := SystemBlock{Type: "text", Text: billingHeader}
 
@@ -341,10 +363,27 @@ func (c *Client) injectSystemPrefix(req *MessageRequest) {
 	}
 }
 
-// prepareRequest injects metadata, the identity + billing system prefix,
-// and sets beta headers on the request. Called by Create and Stream before
-// sending.
+// hasSystemPrefix reports whether the request's system prompt already starts
+// with the Claude Code identity preamble, i.e. injectSystemPrefix already ran
+// on it (possibly in another process — see the daemon note above).
+func hasSystemPrefix(req *MessageRequest) bool {
+	if req.System == nil {
+		return false
+	}
+	if req.System.Blocks != nil {
+		return len(req.System.Blocks) > 0 && req.System.Blocks[0].Text == claudeCodeIdentity
+	}
+	return req.System.Text == claudeCodeIdentity
+}
+
+// prepareRequest injects metadata and the identity + billing system prefix.
+// Called by Create, Stream, and Raw before sending. Gateway clients skip
+// injection entirely — the daemon they talk to applies the full pipeline
+// server-side, and injecting on both sides would duplicate the prefix.
 func (c *Client) prepareRequest(req *MessageRequest) {
+	if c.gateway {
+		return
+	}
 	c.injectMetadata(req)
 	c.injectSystemPrefix(req)
 }
@@ -492,7 +531,12 @@ func (c *Client) doWithModel(ctx context.Context, method, path string, model str
 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Anthropic-Version", c.APIVersion)
-	req.Header.Set("Authorization", "Bearer "+c.accessToken)
+	// An empty access token happens only in gateway mode against an
+	// unauthenticated loopback daemon — send no Authorization header rather
+	// than a dangling "Bearer ".
+	if c.accessToken != "" {
+		req.Header.Set("Authorization", "Bearer "+c.accessToken)
+	}
 	req.Header.Set("anthropic-dangerous-direct-browser-access", "true")
 	req.Header.Set("User-Agent", "claude-cli/2.1.92 (external, cli)")
 	req.Header.Set("x-app", "cli")

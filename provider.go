@@ -34,6 +34,15 @@ type refreshableProvider interface {
 
 // --- Built-in providers ---
 
+// staticKeyProvider satisfies TokenProvider with a fixed string — the daemon
+// auth key in gateway mode (WithGateway). It is not a refreshableProvider:
+// there is nothing to refresh and no expiry, so EnsureFresh degrades to a
+// no-op Token() call. An empty key is valid (unauthenticated loopback daemon)
+// and results in no Authorization header being sent.
+type staticKeyProvider string
+
+func (p staticKeyProvider) Token(context.Context) (string, error) { return string(p), nil }
+
 // tokenManager manages the OAuth access token lifecycle.
 //
 // Two modes:

@@ -314,7 +314,16 @@ Security is fail-loud: listening on a non-loopback address without `--auth-key` 
 
 The daemon shuts down gracefully on SIGINT/SIGTERM (in-flight requests, including open streams, get a 10-second drain window). For production, a systemd unit with `Restart=always` and install instructions for both system-wide and `systemctl --user` setups ships in [`deploy/kraube-serve.service`](deploy/kraube-serve.service).
 
-Library consumers can embed the same thing via `kraube.NewServer(client, kraube.ServerConfig{...})`, or just reuse the keepalive primitive in their own long-lived processes:
+Go programs that link the library talk to the daemon via `WithGateway` — a constructor-only swap from a direct client. A gateway client carries no OAuth state at all (no credentials file, no refresh, no profile fetch), authenticates with the serve key, skips client-side injection (the daemon does it), and uses a plain direct transport so `HTTPS_PROXY` never captures daemon traffic:
+
+```go
+client, err := kraube.NewClient(ctx,
+    kraube.WithGateway("http://127.0.0.1:8787", os.Getenv("KRAUBE_SERVE_KEY")),
+)
+// Messages.Create / Stream, errors, rate-limit tracking — unchanged.
+```
+
+Library consumers can also embed the daemon itself via `kraube.NewServer(client, kraube.ServerConfig{...})`, or just reuse the keepalive primitive in their own long-lived processes:
 
 ```go
 // Refresh proactively when less than 10 minutes of token lifetime remain.

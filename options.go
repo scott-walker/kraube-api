@@ -44,6 +44,11 @@ type clientConfig struct {
 	// Behavior
 	skipProfile bool
 
+	// Gateway mode: the client talks to a local `kraube serve` daemon instead
+	// of the Anthropic API. The daemon owns credentials and applies the OAuth
+	// injection pipeline server-side.
+	gateway bool
+
 	// Deferred token source resolution. When non-empty, NewClient reads
 	// credentials from this path at construction time. A path of "_default_"
 	// resolves to DefaultCredentialsPath() when NewClient runs, which picks
@@ -99,6 +104,43 @@ func WithEnvToken(envVar string) Option {
 	return func(c *clientConfig) {
 		c.provider = newEnvTokenManager(envVar)
 		c.credentialsPath = ""
+	}
+}
+
+// WithGateway points the client at a running `kraube serve` daemon instead of
+// the Anthropic API. The daemon is the sole owner of credentials.json and
+// applies the full OAuth injection pipeline (identity preamble, billing
+// header, metadata.user_id, beta headers) server-side, so a gateway client:
+//
+//   - sends requests to gatewayURL instead of api.anthropic.com;
+//
+//   - authenticates with the daemon's static auth key (`--auth-key` /
+//     KRAUBE_SERVE_KEY); pass "" for an unauthenticated loopback daemon —
+//     then no Authorization header is sent at all;
+//
+//   - performs no OAuth work: no credentials file, no token refresh, no
+//     profile fetch — the process never touches Anthropic auth state;
+//
+//   - skips client-side system-prefix/metadata injection (the daemon injects;
+//     doing it here too would duplicate the prefix blocks);
+//
+//   - defaults to a plain direct HTTP transport: HTTPS_PROXY / ALL_PROXY are
+//     meant for Anthropic egress and must not capture daemon traffic. Use
+//     WithHTTPClient to override when the daemon is reached through a tunnel.
+//
+//     client, _ := kraube.NewClient(ctx,
+//     kraube.WithGateway("http://127.0.0.1:8787", os.Getenv("KRAUBE_SERVE_KEY")),
+//     )
+//
+// Everything else — Messages.Create / Stream, typed errors, rate-limit
+// tracking from response headers — behaves exactly as with a direct client.
+func WithGateway(gatewayURL, key string) Option {
+	return func(c *clientConfig) {
+		c.baseURL = gatewayURL
+		c.provider = staticKeyProvider(key)
+		c.credentialsPath = ""
+		c.skipProfile = true
+		c.gateway = true
 	}
 }
 
