@@ -76,6 +76,40 @@ func TestContentUnmarshalJSON(t *testing.T) {
 	if c2.Blocks[0].Text != "hi" {
 		t.Errorf("block text = %q, want hi", c2.Blocks[0].Text)
 	}
+
+	// Object content — server-side tool results (code_execution,
+	// bash_code_execution, web_search error) send an object here.
+	var c3 Content
+	if err := json.Unmarshal([]byte(`{"type":"code_execution_tool_result_error","error_code":"too_many_requests"}`), &c3); err != nil {
+		t.Fatalf("object content: %v", err)
+	}
+	if c3.Object == nil {
+		t.Fatal("object content not captured")
+	}
+	back, _ := json.Marshal(c3)
+	if !bytes.Contains(back, []byte(`"too_many_requests"`)) {
+		t.Errorf("object content lost on marshal: %s", back)
+	}
+}
+
+// Ответ модели с блоком code_execution_tool_result (агентный web_search
+// 20260209 ходит через него) должен декодироваться целиком.
+func TestMessageResponseWithServerToolResult(t *testing.T) {
+	raw := `{"id":"msg_1","type":"message","role":"assistant","content":[
+		{"type":"text","text":"Ищу"},
+		{"type":"server_tool_use","id":"srvtoolu_1","name":"code_execution","input":{}},
+		{"type":"code_execution_tool_result","tool_use_id":"srvtoolu_1","content":{"type":"code_execution_tool_result_error","error_code":"too_many_requests"}}
+	],"stop_reason":"end_turn"}`
+	var msg MessageResponse
+	if err := json.Unmarshal([]byte(raw), &msg); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(msg.Content) != 3 {
+		t.Fatalf("blocks = %d, want 3", len(msg.Content))
+	}
+	if msg.Content[2].Content == nil || msg.Content[2].Content.Object == nil {
+		t.Error("tool result object content not captured")
+	}
 }
 
 func TestSystemPromptMarshalJSON(t *testing.T) {

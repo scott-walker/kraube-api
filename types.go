@@ -1,6 +1,9 @@
 package kraube
 
-import "encoding/json"
+import (
+	"bytes"
+	"encoding/json"
+)
 
 // --- Roles ---
 
@@ -52,10 +55,17 @@ func AssistantBlocks(blocks ...ContentBlock) Message {
 
 // --- Content (string | []ContentBlock) ---
 
-// Content represents message content: either a plain string or an array of ContentBlock.
+// Content represents message content in one of the three shapes the API uses:
+// a plain string, an array of ContentBlock, or a bare object. The object shape
+// comes from server-side tool results — code_execution_tool_result,
+// bash_code_execution_tool_result and the error form of web_search_tool_result
+// carry `"content": {...}`, not an array. It is kept verbatim in Object and
+// written back as-is, so an unknown result shape passes through instead of
+// failing the whole response decode.
 type Content struct {
 	Text   string
 	Blocks []ContentBlock
+	Object json.RawMessage
 }
 
 // TextContent creates a Content from a plain string.
@@ -64,18 +74,35 @@ func TextContent(s string) Content { return Content{Text: s} }
 // BlocksContent creates a Content from content blocks.
 func BlocksContent(blocks []ContentBlock) Content { return Content{Blocks: blocks} }
 
+// ObjectContent creates a Content from a raw JSON object.
+func ObjectContent(raw json.RawMessage) Content { return Content{Object: raw} }
+
 func (c Content) MarshalJSON() ([]byte, error) {
-	if c.Blocks != nil {
+	switch {
+	case c.Object != nil:
+		return c.Object, nil
+	case c.Blocks != nil:
 		return json.Marshal(c.Blocks)
 	}
 	return json.Marshal(c.Text)
 }
 
 func (c *Content) UnmarshalJSON(data []byte) error {
-	if len(data) > 0 && data[0] == '"' {
-		return json.Unmarshal(data, &c.Text)
+	trimmed := bytes.TrimLeft(data, " \t\r\n")
+	if len(trimmed) == 0 {
+		return nil
 	}
-	return json.Unmarshal(data, &c.Blocks)
+	switch trimmed[0] {
+	case '"':
+		return json.Unmarshal(trimmed, &c.Text)
+	case '[':
+		return json.Unmarshal(trimmed, &c.Blocks)
+	case 'n': // null
+		return nil
+	default:
+		c.Object = append(json.RawMessage(nil), trimmed...)
+		return nil
+	}
 }
 
 // --- Content Blocks ---
