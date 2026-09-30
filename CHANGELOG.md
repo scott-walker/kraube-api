@@ -1,5 +1,10 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+- **Proxied requests no longer leak their tunnels.** The Chrome-fingerprint transport dials a fresh connection (CONNECT tunnel + uTLS) per request and never reuses it, but nothing ever closed it: the HTTP/2 client connection had no idle timeout and the one-shot HTTP/1 transport parked the connection in its pool. Every finished request left an open tunnel until the server dropped it minutes later. Under ~1000 requests/hour that was ~95 simultaneous tunnels through one proxy address, and a commercial proxy with a per-IP connection cap started answering `CONNECT` with `429 Too Many Requests` — a third of `kraube serve` requests failed with `utls handshake ... connection reset by peer` while the proxy itself looked healthy to every probe. The HTTP/2 connection now closes after 15 s idle (the timer only runs with no active streams, so long streams are unaffected), the HTTP/1 connection closes with the response body. Measured on the production daemon after the fix: 0 open tunnels between requests (was 94), 0 proxy rejections. The HTTP/2 transport is also built once in the constructor instead of lazily in `RoundTrip`, which raced under concurrent requests.
+
 ## [0.7.0] - 2026-07-24
 
 ### Added

@@ -40,7 +40,21 @@ type connInfo struct {
 // handshake always happens end-to-end with the real target host, so the
 // Chrome fingerprint is preserved regardless of proxy type.
 func newChromeTransport(proxyURL *url.URL) http.RoundTripper {
-	return &chromeTransport{proxyURL: proxyURL}
+	return &chromeTransport{
+		proxyURL: proxyURL,
+		h2Transport: &http2.Transport{
+			DialTLSContext: func(ctx context.Context, network, addr string, cfg *tls.Config) (net.Conn, error) {
+				// This won't be called — we pass the conn directly.
+				return nil, fmt.Errorf("unexpected DialTLSContext call")
+			},
+			// Every request dials its own connection and nothing reuses it, so
+			// an idle connection is pure leak. Without a timeout it stays open
+			// until the server drops it (minutes): at ~1000 requests/hour that
+			// is ~100 open tunnels through the proxy, and commercial proxies
+			// answer CONNECT with 429 once their per-IP connection cap is hit.
+			IdleConnTimeout: 15 * time.Second,
+		},
+	}
 }
 
 type chromeTransport struct {
@@ -259,15 +273,6 @@ func (p *prefixedConn) Read(b []byte) (int, error) {
 }
 
 func (t *chromeTransport) roundTripH2(conn net.Conn, req *http.Request) (*http.Response, error) {
-	if t.h2Transport == nil {
-		t.h2Transport = &http2.Transport{
-			DialTLSContext: func(ctx context.Context, network, addr string, cfg *tls.Config) (net.Conn, error) {
-				// This won't be called — we pass the conn directly.
-				return nil, fmt.Errorf("unexpected DialTLSContext call")
-			},
-		}
-	}
-
 	cc, err := t.h2Transport.NewClientConn(conn)
 	if err != nil {
 		_ = conn.Close()
@@ -281,6 +286,9 @@ func (t *chromeTransport) roundTripH1(conn net.Conn, req *http.Request) (*http.R
 		DialTLS: func(network, addr string) (net.Conn, error) {
 			return conn, nil
 		},
+		// The transport lives for one request: close the connection with the
+		// response body instead of parking it in a pool nobody will read.
+		DisableKeepAlives: true,
 	}
 	return tr.RoundTrip(req)
 }
